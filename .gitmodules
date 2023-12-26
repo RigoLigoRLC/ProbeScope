@@ -1,0 +1,6 @@
+[submodule "host-tools/qmsetup"]
+	path = host-tools/qmsetup
+	url = https://github.com/stdware/qmsetup
+[submodule "lib/libpsprobe"]
+	path = lib/libpsprobe
+	url = https://github.com/RigoLigoRLC/libpsprobe

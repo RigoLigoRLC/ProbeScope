@@ -52,3 +52,10 @@ compile_commands.json
 *creator.user*
 
 *_qmlcache.qrc
+
+# Clangd cache
+.cache/
+
+build/
+out/
+.vscode/settings.json
