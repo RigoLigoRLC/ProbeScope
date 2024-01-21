@@ -1,6 +1,9 @@
 find_package(qmsetup QUIET)
 
 if (NOT TARGET qmsetup::library)
+
+    message(STATUS "qastool not found, building from source and deploying...")
+
     # Modify this variable according to your project structure
     set(_source_dir ${CMAKE_SOURCE_DIR}/host-tools/qmsetup)
 

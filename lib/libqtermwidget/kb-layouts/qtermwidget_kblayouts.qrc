@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/qtermwidget/kblayouts">
+        <file>default.keytab</file>
+        <file>linux.keytab</file>
+        <file>macbook.keytab</file>
+        <file>solaris.keytab</file>
+        <file>vt420pc.keytab</file>
+    </qresource>
+</RCC>

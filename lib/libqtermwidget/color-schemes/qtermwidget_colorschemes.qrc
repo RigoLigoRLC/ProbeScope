@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/qtermwidget/color-schemes">
+        <file>BlackOnLightYellow.colorscheme</file>
+        <file>BlackOnRandomLight.colorscheme</file>
+        <file>BlackOnWhite.colorscheme</file>
+        <file>BreezeModified.colorscheme</file>
+        <file>DarkPastels.colorscheme</file>
+        <file>Falcon.colorscheme</file>
+        <file>GreenOnBlack.colorscheme</file>
+        <file>Linux.colorscheme</file>
+        <file>Solarized.colorscheme</file>
+        <file>SolarizedLight.colorscheme</file>
+        <file>Tango.colorscheme</file>
+        <file>Ubuntu.colorscheme</file>
+        <file>WhiteOnBlack.colorscheme</file>
+    </qresource>
+</RCC>

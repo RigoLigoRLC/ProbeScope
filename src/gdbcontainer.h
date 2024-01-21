@@ -2,9 +2,9 @@
 #pragma once
 
 #include "gdbmi.h"
+#include "gdbreadonlydevice.h"
 #include <QMap>
 #include <QProcess>
-#include <functional>
 
 class GdbContainer final : public QObject {
     Q_OBJECT
@@ -18,7 +18,11 @@ public:
     bool startGdb();
     bool stopGdb();
 
-    uint64_t sendCommand(const QString &command);
+    bool isGdbRunning() const { return m_gdbProcess.state() != QProcess::NotRunning; }
+
+    GdbReadonlyDevice *getGdbTerminalDevice() { return &m_gdbTerminalDevice; }
+
+    uint64_t sendCommand(QString command);
 
 private:
     // Private functions
@@ -37,12 +41,14 @@ private:
     void tryParseGdbOutput();
 
 private slots:
-    void gdbStarted();
+    void gdbStartedSlot();
+    void gdbErrorOccurred(QProcess::ProcessError error);
     void gdbProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void gdbProcessReadyReadStandardOutput();
-    // void gdbProcessReadyReadStandardError(); // Unused for now
+    void gdbProcessReadyReadStandardError(); // Only put it into terminal
 
 signals:
+    void gdbStarted(bool successful);
     void gdbExited(bool normalExit, int exitCode);
     void gdbCommandResponse(uint64_t token, const gdbmi::Response response);
 
@@ -72,4 +78,9 @@ private:
      *        This is used to tell if GDB exits unexpectedly.
      */
     bool m_shuttingGdbDown;
+
+    /**
+     * @brief Used to read GDB terminal in readonly mode
+     */
+    GdbReadonlyDevice m_gdbTerminalDevice;
 };

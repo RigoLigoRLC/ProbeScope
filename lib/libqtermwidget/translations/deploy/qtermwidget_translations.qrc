@@ -1,0 +1,41 @@
+<RCC>
+    <qresource prefix="/qtermwidget/translations">
+        <file>qtermwidget_ar.qm</file>
+        <file>qtermwidget_arn.qm</file>
+        <file>qtermwidget_ast.qm</file>
+        <file>qtermwidget_bg.qm</file>
+        <file>qtermwidget_ca.qm</file>
+        <file>qtermwidget_cs.qm</file>
+        <file>qtermwidget_cy.qm</file>
+        <file>qtermwidget_da.qm</file>
+        <file>qtermwidget_de.qm</file>
+        <file>qtermwidget_de_CH.qm</file>
+        <file>qtermwidget_el.qm</file>
+        <file>qtermwidget_es.qm</file>
+        <file>qtermwidget_et.qm</file>
+        <file>qtermwidget_fi.qm</file>
+        <file>qtermwidget_fr.qm</file>
+        <file>qtermwidget_gl.qm</file>
+        <file>qtermwidget_he.qm</file>
+        <file>qtermwidget_hr.qm</file>
+        <file>qtermwidget_hu.qm</file>
+        <file>qtermwidget_it.qm</file>
+        <file>qtermwidget_ja.qm</file>
+        <file>qtermwidget_ko.qm</file>
+        <file>qtermwidget_lt.qm</file>
+        <file>qtermwidget_nb_NO.qm</file>
+        <file>qtermwidget_nl.qm</file>
+        <file>qtermwidget_oc.qm</file>
+        <file>qtermwidget_pl.qm</file>
+        <file>qtermwidget_pt.qm</file>
+        <file>qtermwidget_pt_BR.qm</file>
+        <file>qtermwidget_ru.qm</file>
+        <file>qtermwidget_si.qm</file>
+        <file>qtermwidget_sk.qm</file>
+        <file>qtermwidget_tr.qm</file>
+        <file>qtermwidget_translations.qrc</file>
+        <file>qtermwidget_uk.qm</file>
+        <file>qtermwidget_zh_CN.qm</file>
+        <file>qtermwidget_zh_TW.qm</file>
+    </qresource>
+</RCC>
