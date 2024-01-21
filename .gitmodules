@@ -4,3 +4,6 @@
 [submodule "lib/libpsprobe"]
 	path = lib/libpsprobe
 	url = https://github.com/RigoLigoRLC/libpsprobe
+[submodule "host-tools/qt-json-autogen"]
+	path = host-tools/qt-json-autogen
+	url = https://github.com/SineStriker/qt-json-autogen
