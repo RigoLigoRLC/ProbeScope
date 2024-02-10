@@ -1,14 +1,22 @@
 
 #include "symbolbackend.h"
+#include "gdbcontainer.h"
+#include "gdbmi.h"
+#include "symbolpanel.h"
+#include <QDebug>
 #include <QMessageBox>
-#include <qapplication.h>
-#include <qnamespace.h>
-#include <qprogressdialog.h>
+#include <libdwarf/dwarf.h>
+#include <libdwarf/libdwarf.h>
+
+
 
 SymbolBackend::SymbolBackend(QString gdbExecutable, QObject *parent) : QObject(parent) {
     m_symbolFileFullPath = "";
     m_gdbProperlySet = false;
     m_waitTimer.setSingleShot(true);
+
+    // Initialize libdwarf data
+    m_dwarfDbg = nullptr;
 
     // It will pop out automatically when construted, close it immediately
     m_progressDialog.close();
@@ -23,6 +31,11 @@ SymbolBackend::SymbolBackend(QString gdbExecutable, QObject *parent) : QObject(p
 }
 
 SymbolBackend::~SymbolBackend() {
+    if (m_dwarfDbg != nullptr) {
+        dwarf_finish(m_dwarfDbg);
+        m_dwarfDbg = nullptr;
+    }
+
     m_gdb.stopGdb();
 }
 
@@ -30,10 +43,22 @@ QString SymbolBackend::errorString(SymbolBackend::Error error) {
     switch (error) {
         case Error::NoError:
             return tr("No error");
+        case Error::GdbNotStarted:
+            return tr("GDB not started");
         case Error::GdbResponseTimeout:
             return tr("GDB response timeout");
         case Error::GdbStartupFail:
             return tr("GDB startup failed");
+        case Error::GdbCommandExecutionError:
+            return tr("GDB command execution failure");
+        case Error::UnexpectedGdbConsoleOutput:
+            return tr("Unexpected GDB console output (nothing useful found)");
+        case Error::UnsupportedCppIdentifier:
+            return tr("Unsupported C++ identifier is used");
+        case Error::LibdwarfApiFailure:
+            return tr("A libdwarf API call has failed");
+        case Error::ExplainTypeFailed:
+            return tr("Action failed because an internal call to explainType was unsuccessful");
         default:
             return tr("Unknown error");
     }
@@ -63,6 +88,13 @@ bool SymbolBackend::setGdbExecutableLazy(QString gdbPath) {
         }
     });
 
+    // Starting a process is instantaneous on all platforms I know of so startupResult should be ready
+    // right after startup call
+    m_gdb.startGdb();
+
+    // Disconnect gdbStarted signal - it's only used here but beware of this later
+    disconnect(&m_gdb, SIGNAL(gdbStarted));
+
     if (startupResult != Error::NoError) {
         QMessageBox::critical(nullptr, tr("GDB startup failed"),
                               tr("GDB startup failed. Please set proper GDB executable path "
@@ -76,17 +108,462 @@ bool SymbolBackend::setGdbExecutableLazy(QString gdbPath) {
     }
 }
 
-SymbolBackend::Error SymbolBackend::switchSymbolFile(QString symbolFileFullPath) {
+Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbolFileFullPath) {
     m_symbolFileFullPath = symbolFileFullPath;
 
-    // If GDB is not running, start it
-    if (!m_gdb.isGdbRunning()) {
-        m_gdb.startGdb();
+    // Prepare a progress dialog
+    m_progressDialog.setLabelText(tr("Loading symbol file..."));
+    m_progressDialog.show();
+
+    // // If we have a symbol file set, tell GDB to use it
+    // auto result = retryableGdbCommand(QString("-file-exec-and-symbols \"%1\"").arg(m_symbolFileFullPath));
+    // if (result.isErr()) {
+    //     return Err(result.unwrapErr());
+    // }
+
+    Dwarf_Error dwErr;
+    int dwRet;
+    if (m_dwarfDbg) {
+        // Clean up CU DIEs cache
+        for (auto it = m_cus.begin(); it != m_cus.end(); it++) {
+            for (auto jt = it->TopDies.begin(); jt != it->TopDies.end(); jt++) {
+                dwarf_dealloc_die(*jt);
+            }
+            dwarf_dealloc_die(it->CuDie);
+        }
+        m_cus.clear();
+
+        // Discard previous file
+        dwRet = dwarf_finish(m_dwarfDbg);
+    }
+    dwRet = dwarf_init_path(symbolFileFullPath.toLocal8Bit().data(), NULL, 0, DW_GROUPNUMBER_ANY, NULL, NULL,
+                            &m_dwarfDbg, &dwErr);
+    if (dwRet != DW_DLV_OK) {
+        return Err(Error::LibdwarfApiFailure);
     }
 
-    // If we have a symbol file set, tell GDB to use it
-    auto result = retryableGdbCommand(QString("-file-exec-and-symbols \"%1\"").arg(m_symbolFileFullPath));
-    return (result.isErr()) ? result.unwrapErr() : Error::NoError;
+    m_progressDialog.close();
+
+    return Ok();
+}
+
+Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::getSourceFileList() {
+    QList<SourceFile> ret;
+
+    // Refresh our symbol table, with a similar structure of GDB/MI's serialization format
+    m_progressDialog.setLabelText(tr("Refreshing symbols..."));
+    QCoreApplication::processEvents();
+
+    // Try iterate through all CUs in dwarf
+    Dwarf_Unsigned abbrev_offset = 0;
+    Dwarf_Half address_size = 0;
+    Dwarf_Half version_stamp = 0;
+    Dwarf_Half offset_size = 0;
+    Dwarf_Half extension_size = 0;
+    Dwarf_Sig8 signature;
+    Dwarf_Unsigned typeoffset = 0;
+    Dwarf_Unsigned next_cu_header = 0;
+    Dwarf_Half header_cu_type = 0;
+    int dwRet = DW_DLV_OK;
+
+    // Iterate until all CU are drained
+    forever {
+        Dwarf_Die noDie = 0;
+        Dwarf_Die cuDie = 0;
+        Dwarf_Unsigned cuHeaderLength = 0;
+
+        memset(&signature, 0, sizeof(signature));
+        dwRet = dwarf_next_cu_header_d(m_dwarfDbg, true, &cuHeaderLength, &version_stamp, &abbrev_offset, &address_size,
+                                       &offset_size, &extension_size, &signature, &typeoffset, &next_cu_header,
+                                       &header_cu_type, NULL);
+        if (dwRet == DW_DLV_ERROR) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        if (dwRet == DW_DLV_NO_ENTRY) {
+            break;
+        }
+        dwRet = dwarf_siblingof_b(m_dwarfDbg, noDie, true, &cuDie, NULL);
+        if (dwRet != DW_DLV_OK) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+
+        // Retrieve file name. If file name cannot be retrieved, discard this CU
+        DwarfAttrList attrList(m_dwarfDbg, cuDie);
+        auto nameAttr = attrList(DW_AT_name);
+        if (!nameAttr) {
+            dwarf_dealloc_die(cuDie);
+            continue;
+        }
+        char *nameStr;
+        SourceFile srcFile;
+        dwRet = dwarf_formstring(nameAttr, &nameStr, NULL);
+        if (!nameStr || dwRet != DW_DLV_OK) {
+            dwarf_dealloc_die(cuDie);
+            continue;
+        }
+        srcFile.path = QString(nameStr);
+        srcFile.cuIndex = ret.size();
+        // qDebug() << "CU file name" << nameStr;
+
+        // Cache CU data, all children etc
+        DwarfCuData cuData;
+
+        cuData.CuDie = cuDie;       // CU DIE
+        cuData.Name = srcFile.path; // File name
+        dwRet = dwarf_die_CU_offset(cuDie, &cuData.CuDieOff, NULL);
+        if (dwRet != DW_DLV_OK) {
+            dwarf_dealloc_die(cuDie);
+            continue;
+        }
+        // Comp dir
+        auto compDirAttr = attrList(DW_AT_comp_dir);
+        if (compDirAttr) {
+            char *compDirStr;
+            dwRet = dwarf_formstring(compDirAttr, &compDirStr, NULL);
+            if (nameStr && dwRet == DW_DLV_OK) {
+                cuData.CompileDir = QString(compDirStr);
+            }
+        }
+        // Producer
+        auto producerAttr = attrList(DW_AT_producer);
+        if (producerAttr) {
+            char *producerStr;
+            dwRet = dwarf_formstring(producerAttr, &producerStr, NULL);
+            if (producerStr && dwRet == DW_DLV_OK) {
+                cuData.Producer = QString(producerStr);
+            }
+        }
+        // CU top level DIEs
+        Dwarf_Die firstTop = 0;
+        dwRet = dwarf_child(cuDie, &firstTop, NULL);
+        if (!firstTop || dwRet != DW_DLV_OK) {
+            dwarf_dealloc_die(cuDie);
+            continue;
+        }
+        Dwarf_Die currentTop = firstTop;
+        forever {
+            Dwarf_Off dieOffset;
+            if (dwarf_die_CU_offset(currentTop, &dieOffset, NULL) != DW_DLV_OK) {
+                goto SkipDie;
+            }
+            cuData.TopDies[dieOffset /* + cuData.CuDieOff*/] = currentTop;
+            // qDebug() << "  Children DIE @" << QString::number(dieOffset, 16);
+        SkipDie:
+            // Go to next sibling
+            dwRet = dwarf_siblingof_b(m_dwarfDbg, currentTop, true, &currentTop, NULL);
+            if (dwRet == DW_DLV_NO_ENTRY) {
+                break; // All done
+            }
+
+            Q_ASSERT(dwRet != DW_DLV_ERROR);
+        }
+        // All DIEs, depth first search
+        int depth = 0;
+        std::function<void(Dwarf_Die)> recurseGetDies = [&](Dwarf_Die rootDie) {
+            Dwarf_Die childDie = 0;
+            Dwarf_Die currentDie = rootDie;
+            Dwarf_Off offset;
+
+            // Cache current DIE
+            int dwRet = dwarf_die_CU_offset(rootDie, &offset, NULL);
+            Q_ASSERT(dwRet == DW_DLV_OK);
+            cuData.Dies[offset /* + cuData.CuDieOff*/] = rootDie;
+
+            // Loop on siblings
+            forever {
+                Dwarf_Die siblingDie = 0;
+
+                // See if current node has a child
+                dwRet = dwarf_child(currentDie, &childDie, NULL);
+                Q_ASSERT(dwRet != DW_DLV_ERROR);
+                if (dwRet == DW_DLV_OK) {
+                    // If it does, try recursively on child
+                    recurseGetDies(childDie);
+                    firstTop = 0;
+                }
+
+                // After looking into child, try get sibling of current node
+                dwRet = dwarf_siblingof_b(m_dwarfDbg, currentDie, true, &siblingDie, NULL);
+                Q_ASSERT(dwRet != DW_DLV_ERROR);
+                if (dwRet == DW_DLV_NO_ENTRY) {
+                    break;
+                }
+                currentDie = siblingDie;
+
+                // Cache current DIE
+                int dwRet = dwarf_die_CU_offset(currentDie, &offset, NULL);
+                Q_ASSERT(dwRet == DW_DLV_OK);
+                cuData.Dies[offset /* + cuData.CuDieOff*/] = currentDie;
+            }
+
+            // // Try go deeper
+            // dwRet = dwarf_child(rootDie, &child, NULL);
+            // if (dwRet == DW_DLV_OK && child) {
+            //     recurseGetDies(child);
+            // } else if (dwRet == DW_DLV_NO_ENTRY) {
+            //     // No children, go for siblings
+            //     forever {
+            //         // Get next sibling
+            //         dwRet = dwarf_siblingof_b(m_dwarfDbg, rootDie, true, &rootDie, NULL);
+            //         if (dwRet == DW_DLV_NO_ENTRY) {
+            //             // No more sibling in the chain, return from this level
+            //             return;
+            //         } else {
+            //             // Process next one
+            //             recurseGetDies(rootDie);
+            //         }
+            //     }
+            // }
+        };
+
+        recurseGetDies(firstTop);
+
+        // Add into internal CU cache
+        m_cus.append(cuData);
+
+        // Add as a valid CU for returning
+        ret.append(srcFile);
+    }
+
+    return Ok(ret);
+}
+
+Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
+    SymbolBackend::getVariableOfSourceFile(uint32_t cuIndex) {
+    if (cuIndex >= m_cus.size()) {
+        return Err(Error::InvalidParameter);
+    }
+    QList<VariableNode> ret;
+    auto &cu = m_cus[cuIndex];
+    auto &topDies = cu.TopDies, &allDies = cu.Dies;
+
+    // Find all variable DIEs
+    for (auto it = topDies.constBegin(); it != topDies.constEnd(); it++) {
+        Dwarf_Half tag;
+        if (dwarf_tag(it.value(), &tag, NULL) != DW_DLV_OK) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        if (tag != DW_TAG_variable) {
+            continue;
+        }
+
+        Dwarf_Die actualVariableDie = it.value();
+        DwarfAttrList attrs(m_dwarfDbg, it.value());
+
+        // Take address
+        Dwarf_Attribute addrAttr = attrs(DW_AT_location);
+        if (!addrAttr) {
+            // If a variable has no address, discard it
+            continue;
+        }
+        Dwarf_Unsigned exprLen;
+        Dwarf_Ptr exprPtr;
+        Dwarf_Half addrAttrForm;
+        if (dwarf_whatform(addrAttr, &addrAttrForm, NULL) != DW_DLV_OK) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        // FIXME: Arm compiler uses block form instead of exprloc for variable addresses
+        if (dwarf_formexprloc(addrAttr, &exprLen, &exprPtr, NULL) != DW_DLV_OK) {
+            Dwarf_Block *addrBlock;
+            if (dwarf_formblock(addrAttr, &addrBlock, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            // TODO: How to use?????
+        }
+
+        // If it is a reference, go to the destination
+        // This is found in root items when a global is defined in a namespace
+        Dwarf_Half form;
+        Dwarf_Attribute specificationAttr;
+        Dwarf_Off trueOffset = 0;
+        if ((specificationAttr = attrs(DW_AT_specification)) && !attrs.has(DW_AT_name)) {
+            Dwarf_Bool isInfo;
+            if (dwarf_formref(specificationAttr, &trueOffset, &isInfo, NULL) != DW_DLV_OK || !isInfo ||
+                !cu.hasDie(trueOffset)) {
+                Dwarf_Off off;
+                dwarf_die_CU_offset(it.value(), &off, NULL);
+                qDebug() << "Go to referenced variable: CU has no DIE" << QString::number(trueOffset, 16)
+                         << ", var DIE:" << QString::number(off, 16);
+                return Err(Error::LibdwarfApiFailure);
+            }
+            actualVariableDie = allDies.value(trueOffset);
+            attrs = std::move(DwarfAttrList(m_dwarfDbg, actualVariableDie));
+        }
+
+        VariableNode node;
+        node.address = exprPtr;
+
+        // Get variable display name
+        char *dispName;
+        Dwarf_Attribute dispNameAttr;
+        if (!(dispNameAttr = attrs(DW_AT_name))) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        if (dwarf_formstring(dispNameAttr, &dispName, NULL) != DW_DLV_OK) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        node.displayName = QString(dispName);
+
+        // Get a DIE offset reference to type specifier. DW_AT_type is always a ref to other DIEs in CU
+        Dwarf_Off typeSpec;
+        Dwarf_Bool isInfo;
+        Dwarf_Attribute typeSpecAttr;
+        if (!(typeSpecAttr = attrs(DW_AT_type))) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        if (dwarf_formref(typeSpecAttr, &typeSpec, &isInfo, NULL) != DW_DLV_OK || !isInfo || !cu.hasDie(typeSpec)) {
+            Dwarf_Off off;
+            dwarf_dieoffset(it.value(), &off, NULL);
+            qDebug() << "Get typespec: CU has no DIE" << QString::number(typeSpec, 16)
+                     << ", var DIE:" << QString::number(trueOffset ? trueOffset : off, 16);
+            return Err(Error::LibdwarfApiFailure);
+        }
+        node.typeSpec = typeSpec;
+
+        // TODO: displayable type name
+        auto typeDetailsResult = getTypeDetails(cuIndex, typeSpec);
+        if (typeDetailsResult.isErr()) {
+            node.displayTypeName = tr("<Error Type>");
+            node.expandable = false;
+            node.iconType = VariableIconType::Unknown;
+        } else {
+            auto typeDetails = typeDetailsResult.unwrap();
+            node.displayTypeName = typeDetails.displayName;
+            node.expandable = typeDetails.expandable;
+            switch (typeDetails.dwarfTag) {
+                case DW_TAG_structure_type:
+                case DW_TAG_union_type:
+                case DW_TAG_class_type:
+                    node.iconType = VariableIconType::Structure;
+                    break;
+                case DW_TAG_enumeration_type:
+                case DW_TAG_base_type:
+                    node.iconType = VariableIconType::Integer;
+                    break;
+                case DW_TAG_array_type:
+                case DW_TAG_subrange_type:
+                    node.iconType = VariableIconType::Array;
+                    break;
+                case DW_TAG_pointer_type:
+                    node.iconType = VariableIconType::Pointer;
+                    break;
+                default:
+                    node.iconType = VariableIconType::Unknown;
+                    break;
+            }
+        }
+
+        ret.append(node);
+    }
+
+    return Ok(ret);
+}
+
+Result<QString, SymbolBackend::Error> SymbolBackend::explainType(QString typeName) {
+    // This ability was not exposed to MI unfortunately, you must emulate console input
+    // GAAAAHHHHHHH
+
+    // C++ is known to cause issues, let's get rid of them
+    if (typeName.contains("::")) {
+        return Ok(QString("__PROBESCOPE_INVALID_TYPE_T"));
+    }
+
+    // WHY ON EARTH class KEYWORD IS PRINTED BUT NOT RECOGNIZED?
+    typeName.remove("class ");
+
+    auto result = retryableGdbCommand(QString("-interpreter-exec console \"whatis %1\"").arg(typeName));
+    if (result.isErr()) {
+        return Err(result.unwrapErr());
+    }
+
+    foreach (auto i, result.unwrap().outputs) {
+        if (i.type != gdbmi::Response::ConsoleOutput::console) {
+            continue;
+        }
+
+        auto explainedType = i.text;
+        if (!explainedType.contains("~\"type = ")) {
+            continue;
+        }
+
+        // Example: R"(~"type = struct __SPI_HandleTypeDef\n")"
+        // R"(~"type = int *\n")"
+        explainedType.remove("~\"type = "); // Should be at very beginning
+        explainedType.remove("\\n\"");      // Should be at very last
+
+        // Remove the goddam cv qualifiers for good
+        explainedType.remove("volatile ");
+        explainedType.remove("const ");
+
+        // Now: R"(struct __SPI_HandleTypeDef)"
+        // R"(int *)"
+        return Ok(explainedType);
+    }
+
+    return Err(Error::UnexpectedGdbConsoleOutput);
+}
+
+Result<uint64_t, SymbolBackend::Error> SymbolBackend::getVariableChildrenCount(QString expr) {
+    // Some C++ stuff is naughty, discard them
+    if (expr.contains("::")) {
+        return Err(Error::UnsupportedCppIdentifier);
+    }
+
+    auto createResult = retryableGdbCommand(QString("-var-create - @ \"%1\"").arg(expr));
+    if (createResult.isErr()) {
+        return Err(createResult.unwrapErr());
+    }
+
+    auto payload = createResult.unwrap().payload.toMap();
+    uint64_t ret = payload["numchild"].toUInt();
+
+    // Don't care if the delete fails
+    auto deleteResult = retryableGdbCommand(QString("-var-delete \"%1\"").arg(payload["name"].toString()));
+    return Ok(ret);
+}
+
+Result<QList<SymbolBackend::VariableInfo>, SymbolBackend::Error> SymbolBackend::getVariableChildren(QString expr) {
+    // TODO:
+    QList<VariableInfo> ret;
+
+    auto createResult = retryableGdbCommand(QString("-var-create - @ \"%1\"").arg(expr));
+    if (createResult.isErr()) {
+        return Err(createResult.unwrapErr());
+    }
+
+    auto payload = createResult.unwrap().payload.toMap();
+    auto name = payload["name"].toString();
+
+    auto getChildrenResult = retryableGdbCommand(QString("-var-list-children \"%1\"").arg(name));
+    if (getChildrenResult.isErr()) {
+        return Err(getChildrenResult.unwrapErr());
+    }
+
+    auto whatChildren = getChildrenResult.unwrap().payload.toMap()["children"];
+
+    // For all the children, get their path expressions
+    // This is a weird response, with a map full of same keys, wrapped in a list... WHYYY GDB??
+    auto childrenMap = getChildrenResult.unwrap().payload.toMap()["children"].toList()[0].toMap();
+    for (auto it = childrenMap.begin(); it != childrenMap.end(); it++) {
+        auto val = it->value<QVariantMap>();
+        VariableInfo varInfo;
+        varInfo.name = val["exp"].toString(); // It says it's an "expression" but it fits the name field best
+        varInfo.typeName = val["type"].toString();
+        varInfo.explainedType = explainType(val["type"].toString()).unwrapOr(QString());
+        varInfo.childrenCount = val["numchild"].toUInt();
+
+        // Try to get its full path
+        auto getPathExprResult =
+            retryableGdbCommand(QString("-var-info-path-expression \"%1\"").arg(val["name"].toString()));
+        if (getPathExprResult.isErr()) {
+            // Untolerable
+            return Err(getPathExprResult.unwrapErr());
+        }
+        varInfo.expression = getChildrenResult.unwrap().payload.toMap()["path_expr"].toString();
+    }
+
+    // return Err(Error::NoError);
+    return Ok(QList<VariableInfo>{});
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
@@ -98,7 +575,21 @@ void SymbolBackend::recoverGdbCrash() {
     waitGdbResponse(m_gdb.sendCommand(QString("-file-exec-and-symbols \"%1\"").arg(m_symbolFileFullPath)));
 }
 
+Result<int, SymbolBackend::Error> SymbolBackend::warnUnstartedGdb() {
+    if (m_gdb.isGdbRunning()) {
+        return Ok(0);
+    }
+
+    QMessageBox::warning(nullptr, tr("GDB not started"), tr("GDB is not started. Please start GDB from menu."));
+    return Err(Error::GdbNotStarted);
+}
+
 Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::retryableGdbCommand(QString command, int timeout) {
+    auto warnResult = warnUnstartedGdb();
+    if (warnResult.isErr()) {
+        return Err(warnResult.unwrapErr());
+    }
+
     QApplication::setOverrideCursor(Qt::WaitCursor);
     forever {
         auto token = m_gdb.sendCommand(command);
@@ -127,6 +618,9 @@ Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::retryableGdbCommand
                 QMessageBox::critical(nullptr, tr("GDB Command Error"),
                                       tr("GDB command error: %1\n\nCommand: %2")
                                           .arg(response.payload.toMap().value("msg").toString(), command));
+
+                QApplication::restoreOverrideCursor();
+                return Err(Error::GdbCommandExecutionError);
             }
 
             QApplication::restoreOverrideCursor();
@@ -149,6 +643,292 @@ Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::waitGdbResponse(uin
     } else {
         return Ok(m_lastGdbResponse);
     }
+}
+
+Result<SymbolBackend::DwarfCuData::TypeDieDetails, SymbolBackend::Error>
+    SymbolBackend::getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie) {
+    if (cuIndex >= m_cus.size()) {
+        return Err(Error::InvalidParameter);
+    }
+
+    auto &cu = m_cus[cuIndex];
+    if (cu.CachedTypes.contains(typeDie)) {
+        return Ok(cu.CachedTypes[typeDie]);
+    } else {
+        TypeResolutionContext ctx; ///< Leave as default; it's only for internal use
+        if (resolveTypeDetails(cuIndex, typeDie, ctx)) {
+            return Ok(cu.CachedTypes[typeDie]);
+        } else {
+            return Err(Error::LibdwarfApiFailure);
+        }
+    }
+}
+
+bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx) {
+    DwarfCuData::TypeDieDetails details;
+    auto &cu = m_cus[cuIndex];
+
+    // Deep in until we reach the elementary type
+    Dwarf_Off currentDieOff = typeDie;
+    Dwarf_Die die;
+    int dwRet;
+
+    // forever {
+    if (!cu.hasDie(currentDieOff)) {
+        return false;
+    }
+    die = cu.die(currentDieOff);
+
+    Dwarf_Half dieTag;
+    if (dwarf_tag(die, &dieTag, NULL) != DW_DLV_OK) {
+        qDebug() << "Cannot get TAG for specified DIE" << typeDie;
+        return false;
+    }
+    details.dwarfTag = dieTag;
+    switch (dieTag) {
+        case DW_TAG_array_type: {
+            // When resolving array type tags, resolve its children which represent array dimensions
+            // Simply use the first child's resolution
+            Dwarf_Die firstRange;
+            Dwarf_Off firstRangeOffset;
+            if (dwarf_child(die, &firstRange, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            if (dwarf_die_CU_offset(firstRange, &firstRangeOffset, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            // Because subrange objects may contain no specific type info, we need to feed the
+            // following resolution routines with the actual type defined in array object
+            Dwarf_Attribute typeAttr;
+            Dwarf_Off typeDieOff;
+            Dwarf_Bool isInfo;
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Q_ASSERT(attrs.has(DW_AT_type));
+            if (!(typeAttr = attrs(DW_AT_type))) {
+                return false;
+            }
+            if (dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            ctx.arrayElementTypeOff = typeDieOff;
+            auto result = resolveTypeDetails(cuIndex, firstRangeOffset, ctx);
+            if (!result) {
+                return false;
+            }
+            auto resultX = getTypeDetails(cuIndex, firstRangeOffset).unwrap();
+            details.displayName = resultX.displayName.arg("");
+            details.expandable = resultX.expandable;
+            break;
+        }
+        case DW_TAG_subrange_type: {
+            // Example: Two dimision array "int a[3][5]" has two subranges, with upperbound 2 and 4
+            // When we iterate through the siblings, we can only go to next sibling
+            // But for arrays, logically when we access a[1] we actually drop the first subrange,
+            // and logically we should append the array dimension sizes from beginning to end of siblings,
+            // but when we do recursive scans we can only go from back to beginning, we need to somehow make it possible
+            // to insert dimensions between the deeper dimensions and the base type. Therefore we have to put a "%1" in
+            // the middle as a placeholder for shallower dimensions to insert into, and others don't need this insertion
+            // point will have to get rid of them themselves.
+
+            // Every subrange has an upperbound. Take that first
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute ubAttr;
+            union {
+                Dwarf_Signed s;
+                Dwarf_Unsigned u;
+            } upperBound;
+            bool hasUpperBound = true;
+            if (!(ubAttr = attrs(DW_AT_upper_bound))) {
+                hasUpperBound = false;
+            } else {
+                Dwarf_Half uboundForm = 0;
+                if (dwarf_whatform(ubAttr, &uboundForm, NULL) != DW_DLV_OK) {
+                    qDebug() << "Cannot get upperbound form";
+                    return false;
+                }
+                if (uboundForm != DW_FORM_sdata && uboundForm != DW_FORM_data1 && uboundForm != DW_FORM_data2 &&
+                    uboundForm != DW_FORM_data4 && uboundForm != DW_FORM_data8 && uboundForm != DW_FORM_data16) {
+                    qDebug() << "Invalid upperbound form";
+                    return false;
+                }
+                if ((uboundForm == DW_FORM_sdata) ? (dwarf_formsdata(ubAttr, &upperBound.s, NULL) != DW_DLV_OK)
+                                                  : (dwarf_formudata(ubAttr, &upperBound.u, NULL) != DW_DLV_OK)) {
+                    qDebug() << "Cannot form upperbound";
+                    return false;
+                }
+
+                // GCC does this for the top level subrange that has no specified size
+                if (uboundForm == DW_FORM_sdata && upperBound.s == -1) {
+                    hasUpperBound = false;
+                }
+            }
+
+            Dwarf_Die deeperDim;
+            Dwarf_Off deeperDimOff;
+            dwRet = dwarf_siblingof_b(m_dwarfDbg, die, true, &deeperDim, NULL);
+            if (dwRet == DW_DLV_OK) {
+                // We got deeper dimension, take that
+                if (dwarf_die_CU_offset(deeperDim, &deeperDimOff, NULL) != DW_DLV_OK) {
+                    qDebug() << "Cannot form deeper dimension subrange";
+                    return false;
+                }
+                if (!resolveTypeDetails(cuIndex, deeperDimOff, ctx)) {
+                    qDebug() << "getTypeDetails for deeper dimension subrange failed";
+                    return false;
+                }
+                // Insert our dimension in the middle
+                auto uboundStr = hasUpperBound ? QString::number(upperBound.s + 1) : "";
+                details.displayName = getTypeDetails(cuIndex, deeperDimOff)
+                                          .unwrap()
+                                          .displayName.arg("%1" + QString("[%1]").arg(uboundStr));
+                details.expandable = hasUpperBound; // When no clear upper bound specified, do not make expandable
+            } else {
+                // No deeper dimension available, take base type
+                auto result = getTypeDetails(cuIndex, ctx.arrayElementTypeOff);
+                if (result.isErr()) {
+                    qDebug() << "getTypeDetails of array base type failed";
+                    return false;
+                }
+                auto uboundStr = hasUpperBound ? QString::number(upperBound.s + 1) : "";
+                details.displayName = result.unwrap().displayName + "%1" + QString("[%1]").arg(uboundStr);
+                details.expandable = true;
+            }
+            break;
+        }
+        case DW_TAG_base_type: {
+            // Fill the displayed type
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute nameAttr;
+            char *nameStr = NULL;
+            if (!(nameAttr = attrs(DW_AT_name))) {
+                return false;
+            }
+            if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK || !nameStr) {
+                return false;
+            }
+            details.displayName = QString(nameStr);
+            details.expandable = false;
+            break;
+        }
+        case DW_TAG_enumeration_type: {
+            // Enums are stored as basic types, take base type and prefix with "(enum) "
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type))) {
+                return false;
+            }
+            if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            auto result = getTypeDetails(cuIndex, baseTypeOff);
+            if (result.isErr()) {
+                return false;
+            }
+            details.displayName = "(enum) " + result.unwrap().displayName;
+            details.expandable = false;
+            break;
+        }
+        case DW_TAG_pointer_type: {
+            // Take base type and append "*"
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type))) {
+                return false;
+            }
+            if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            auto result = getTypeDetails(cuIndex, baseTypeOff);
+            if (result.isErr()) {
+                return false;
+            }
+            details.displayName = result.unwrap().displayName + "*";
+            details.expandable = true;
+            // FIXME: consider logic for expanding basic types / structs/unions
+            break;
+        }
+        case DW_TAG_union_type:
+        case DW_TAG_structure_type:
+        case DW_TAG_class_type: {
+            // Fill the displayed type
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute nameAttr;
+            char *nameStr = NULL;
+            // Use real class/struct names for those who have it
+            if ((nameAttr = attrs(DW_AT_name))) {
+                if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK || !nameStr) {
+                    return false;
+                }
+                details.displayName = QString(nameStr);
+            } else {
+                // For anonymous struct/classes etc, use typedef type name
+                details.displayName = ctx.typedefTypeName;
+            }
+            details.expandable = true;
+            break;
+        }
+        case DW_TAG_typedef: {
+            // Before passing through, get the typedef type name
+            // Some inner types have no names, a candidate type name fron typedef is necessary
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute nameAttr;
+            char *nameStr = NULL;
+            if (!(nameAttr = attrs(DW_AT_name))) {
+                return false;
+            }
+            if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK || !nameStr) {
+                return false;
+            }
+            ctx.typedefTypeName = nameStr;
+
+            // Pass this through to base type
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type))) {
+                return false;
+            }
+            if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            auto ret = resolveTypeDetails(cuIndex, baseTypeOff, ctx);
+            if (ret) {
+                // Copy base type to current type DIE
+                cu.CachedTypes[currentDieOff] = cu.CachedTypes[baseTypeOff];
+            }
+            return ret;
+            break;
+        }
+        case DW_TAG_atomic_type:
+        case DW_TAG_restrict_type:
+        case DW_TAG_const_type:
+        case DW_TAG_volatile_type: {
+            // Meaningless to application, pass through
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type))) {
+                return false;
+            }
+            if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return false;
+            }
+            auto ret = resolveTypeDetails(cuIndex, baseTypeOff, ctx);
+            if (ret) {
+                // Copy base type to current type DIE
+                details = cu.CachedTypes[baseTypeOff];
+            }
+            break;
+        }
+    }
+    // }
+    cu.CachedTypes[currentDieOff] = details;
+    return true;
 }
 
 /***************************************** INTERNAL SLOTS *****************************************/

@@ -3,6 +3,7 @@
 #include "gdbmi.h"
 #include <QProcess>
 #include <cstdint>
+#include <limits>
 
 GdbContainer::GdbContainer(QObject *parent) : QObject(parent) {
     // Initialize members
@@ -36,7 +37,6 @@ bool GdbContainer::startGdb() {
     // Start GDB
     m_gdbProcess.start(m_gdbExecutablePath, QStringList() << "--interpreter=mi3");
     m_gdbProcess.write(gdbmi::EOL);
-    m_startupRequested = true;
     return true;
 }
 
@@ -61,21 +61,9 @@ bool GdbContainer::stopGdb() {
 }
 
 uint64_t GdbContainer::sendCommand(QString command) {
-    // If GDB is not running, buffer the command
+    // If GDB is not running, fail
     if (m_gdbProcess.state() == QProcess::NotRunning) {
-        // Generate a token
-        auto token = m_nextToken++;
-
-        // Buffer the command
-        m_pendingCommands.insert(token, command);
-
-        // Start GDB if not started yet
-        if (!m_startupRequested) {
-            startGdb();
-        }
-
-        // Return the token
-        return token;
+        return std::numeric_limits<uint64_t>::max();
     }
 
     // If GDB is running, send the command
@@ -100,6 +88,7 @@ void GdbContainer::tryParseGdbOutput() {
     auto beginIt = m_gdbStdoutBuffer.begin();
 
     while (true) {
+#if 0
         // Consume and drop non-response lines
         constexpr const char *NonResponsePrefixes = "&~@*+=";
 
@@ -109,6 +98,7 @@ void GdbContainer::tryParseGdbOutput() {
                 ++beginIt;
             }
         }
+#endif
 
         // Search for end of response
         auto searchResult = std::search(m_gdbStdoutBuffer.begin(), m_gdbStdoutBuffer.end(), gdbmi::EndOfResponse,
@@ -150,18 +140,10 @@ void GdbContainer::gdbProcessReadyReadStandardError() {
 }
 
 void GdbContainer::gdbStartedSlot() {
-    // Send pending commands
-    for (auto it = m_pendingCommands.begin(); it != m_pendingCommands.end(); ++it) {
-        sendCommandInternal(it.value(), it.key());
-    }
-    m_pendingCommands.clear();
-
     emit gdbStarted(true);
 }
 
 void GdbContainer::gdbProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    m_startupRequested = false;
-
     if (!m_shuttingGdbDown || exitStatus != QProcess::NormalExit) {
         // GDB exited unexpectedly
         emit gdbExited(false, exitCode);
@@ -176,7 +158,6 @@ void GdbContainer::gdbErrorOccurred(QProcess::ProcessError error) {
     switch (error) {
         case QProcess::FailedToStart:
             emit gdbStarted(false);
-            m_startupRequested = false;
             break;
         // Not used
         case QProcess::Crashed:

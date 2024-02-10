@@ -16,16 +16,19 @@ namespace gdbmi {
     QString escapedText(const QString &s);
 
     struct Response {
-        enum Type_t { unknown, notify, result, console, log, target, promt } type;
+        struct ConsoleOutput {
+            enum Type_t { unknown, notify, console, log, target, promt };
+            ConsoleOutput(const Type_t ty = unknown, const QString &t = {}) : type(ty), text(t) {}
+            QString text;
+            Type_t type;
+        };
 
+        QList<ConsoleOutput> outputs;
         QString message;
         QVariant payload;
         int token = 0;
 
-        Response(Type_t t = unknown, const QString &m = {}, const QVariant &p = {}, int tok = -1)
-            : type{t}, message{m}, payload{p}, token(tok) {}
-
-        bool isValid() const { return type != unknown; }
+        Response(const QString &m = {}, const QVariant &p = {}, int tok = -1) : message{m}, payload{p}, token(tok) {}
     };
 
     QVariantMap parseElements(const QString &str);

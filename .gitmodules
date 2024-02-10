@@ -7,3 +7,9 @@
 [submodule "host-tools/qt-json-autogen"]
 	path = host-tools/qt-json-autogen
 	url = https://github.com/SineStriker/qt-json-autogen
+[submodule "lib/Qt-Advanced-Docking-System"]
+	path = lib/Qt-Advanced-Docking-System
+	url = https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System.git
+[submodule "lib/singleapplication"]
+	path = lib/singleapplication
+	url = https://github.com/itay-grudev/SingleApplication.git

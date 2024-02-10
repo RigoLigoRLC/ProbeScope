@@ -2,13 +2,18 @@
 #pragma once
 
 #include "gdbcontainer.h"
+#include "libdwarf/libdwarf.h"
 #include <QEventLoop>
+#include <QHash>
 #include <QMap>
 #include <QObject>
 #include <QProgressDialog>
 #include <QString>
 #include <QTimer>
 #include <result.h>
+
+
+
 
 /**
  * @brief SymbolBacked uses GdbContainer under the hood to provide all the necessary symbol information
@@ -33,8 +38,78 @@ public:
     explicit SymbolBackend(QString gdbPath, QObject *parent = nullptr);
     ~SymbolBackend();
 
-    enum class Error { NoError, GdbResponseTimeout, GdbStartupFail };
-    QString errorString(Error error);
+    /**
+     * @brief Possible error values of SymbolBackend API calls.
+     */
+    enum class Error {
+        NoError,
+        GdbNotStarted,
+        GdbResponseTimeout,
+        GdbStartupFail,
+        GdbCommandExecutionError,
+        UnexpectedGdbConsoleOutput,
+        UnsupportedCppIdentifier,
+        LibdwarfApiFailure,
+        InvalidParameter,
+        ExplainTypeFailed
+    };
+
+
+    enum class VariableIconType {
+        Integer,
+        FloatingPoint,
+        Boolean,
+        Structure,
+        Pointer,
+        Array,
+        Unknown,
+    };
+
+    enum class ElementaryTypes {
+        Uint8,
+        Sint8,
+        Uint16,
+        Sint16,
+        Uint32,
+        Sint32,
+        Uint64,
+        Sint64,
+        Float32,
+        Float64,
+        Unsupported,
+    };
+
+    struct TypeSpec {};
+
+    struct VariableInfo {
+        QString name;
+        QString typeName;
+        QString explainedType;
+        QString expression;
+        unsigned int childrenCount;
+    };
+
+    struct SourceFile {
+        QString path;
+        uint32_t cuIndex; ///< CU Index when asking SymbolBackend about this CU's stuff
+    };
+
+    struct VariableNode {
+        QString displayName;
+        QString displayTypeName;
+        VariableIconType iconType;
+        bool expandable;
+        void *address;
+        Dwarf_Off typeSpec;
+    };
+
+    /**
+     * @brief Convert SymbolBackend error enumeration values to error strings.
+     *
+     * @param error Error enumeration values.
+     * @return QString Error message.
+     */
+    static QString errorString(Error error);
 
     /**
      * @brief As described in the class brief, this method can only be called once when GDB was not set in constructor.
@@ -55,13 +130,159 @@ public:
      */
     GdbReadonlyDevice *getGdbTerminalDevice() { return m_gdb.getGdbTerminalDevice(); }
 
-    Error switchSymbolFile(QString symbolFileFullPath);
+    /**
+     * @brief Switch the currently selected symbol file. Usually this is called when user selects a new symbol file,
+     *        along with several other methods to refresh the entire workspace state.
+     *
+     * @param symbolFileFullPath full path to symbol file
+     * @return Whether the operation was successful
+     */
+    Result<void, Error> switchSymbolFile(QString symbolFileFullPath);
+
+    /**
+     * @brief Get the source file list for the current symbol file, with basic information about variables inside
+     *
+     * @return Result<QList<SourceFile>, Error>
+     */
+    Result<QList<SourceFile>, Error> getSourceFileList();
+
+    /**
+     * @brief Get root variables of a source file
+     *
+     * @param cuIndex Compilation unit index returned with getSourceFileList
+     * @return Result<QList<VariableNode>, Error>
+     */
+    Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
+
+    /**
+     * @brief Get the children count of an expression.
+     *
+     * @param expr Parent expression
+     * @return On success: Children count. On fail: error code.
+     */
+    Result<uint64_t, Error> getVariableChildrenCount(QString expr);
+
+    /**
+     * @brief Get the children variables of an expression.
+     *
+     * @param expr Parent expression.
+     * @return On success: A list of variable info objects. On fail: error code.
+     */
+    Result<QList<VariableInfo>, Error> getVariableChildren(QString expr);
+
+    /**
+     * @brief Ask GDB about the real type info (traces typedefs) of a type name (with "whatis" command)
+     *
+     * @param typeName type name to be processed
+     * @return Result<QString, Error>
+     */
+    Result<QString, Error> explainType(QString typeName);
 
 private:
-    void warnUnstartedGdb();
+    /**
+     * @brief DWARF Attribute list wrapper for ease of use.
+     */
+    class DwarfAttrList {
+    public:
+        DwarfAttrList(Dwarf_Debug dbg, Dwarf_Die die) : m_die(die), m_dbg(dbg), m_attrList(NULL), m_attrCount(0) {
+            m_lastRet = dwarf_attrlist(die, &m_attrList, &m_attrCount, &m_err);
+        }
+        ~DwarfAttrList() {
+            if (m_attrList && m_attrCount) {
+                for (int i = 0; i < m_attrCount; i++) {
+                    dwarf_dealloc_attribute(m_attrList[i]);
+                }
+                dwarf_dealloc(m_dbg, m_attrList, DW_DLA_LIST);
+            }
+        }
+        // Get an attribute with a specific index in list
+        Dwarf_Attribute operator[](Dwarf_Unsigned idx) const { return (idx >= m_attrCount) ? NULL : m_attrList[idx]; }
+        // Get an attribute with a specific attribute number
+        Dwarf_Attribute operator()(Dwarf_Half attrNumber) {
+            if (!m_attrList || !m_attrCount)
+                return NULL;
+            for (Dwarf_Signed i = 0; i < count(); i++) {
+                Dwarf_Half attrNum;
+                m_lastRet = dwarf_whatattr(m_attrList[i], &attrNum, &m_err);
+                if (attrNum == attrNumber)
+                    return m_attrList[i];
+            }
+            return NULL;
+        }
+        // Move assignment
+        DwarfAttrList &operator=(DwarfAttrList &&that) {
+            if (this != &that) {
+                // Same as dtor
+                if (m_attrList && m_attrCount) {
+                    for (int i = 0; i < m_attrCount; i++) {
+                        dwarf_dealloc_attribute(m_attrList[i]);
+                    }
+                    dwarf_dealloc(m_dbg, m_attrList, DW_DLA_LIST);
+                }
+                // Copy everything
+                m_lastRet = that.m_lastRet;
+                m_dbg = that.m_dbg;
+                m_die = that.m_die;
+                m_err = that.m_err;
+                m_attrCount = that.m_attrCount;
+                m_attrList = that.m_attrList;
+                // Invalidate the moved object
+                that.m_attrList = NULL;
+                that.m_attrCount = 0;
+            }
+            return *this;
+        }
+        bool has(Dwarf_Half attrNumber) {
+            Dwarf_Bool ret;
+            m_lastRet = dwarf_hasattr(m_die, attrNumber, &ret, &m_err);
+            return ret;
+        }
+        int lastRet() const { return m_lastRet; }
+        Dwarf_Signed count() const { return m_attrCount; }
+        Dwarf_Error error() const { return m_err; }
+
+    private:
+        int m_lastRet;
+        Dwarf_Debug m_dbg;
+        Dwarf_Die m_die;
+        Dwarf_Error m_err;
+        Dwarf_Signed m_attrCount;
+        Dwarf_Attribute *m_attrList;
+    };
+
+    struct TypeResolutionContext {
+        TypeResolutionContext() : typedefTypeName(QString()), arrayElementTypeOff(0) {}
+        QString typedefTypeName;       ///< Outmost layer typedef defined type name
+        Dwarf_Off arrayElementTypeOff; ///< Array element type defined in DW_TAG_array_type
+    };
+
+
+    struct DwarfCuData {
+        QString Name;                      ///< CU file name
+        QString CompileDir;                ///< Directory in which it was compiled from
+        QString Producer;                  ///< Compiler info string
+        Dwarf_Die CuDie;                   ///< DIE associated with CU
+        Dwarf_Off CuDieOff;                ///< CU Base Offset
+        QMap<uint64_t, Dwarf_Die> TopDies; ///< Top level DIEs of CU DIE, indexed with offset
+        QMap<uint64_t, Dwarf_Die> Dies;    ///< All DIEs of CU DIE, indexed with offset
+        Dwarf_Die die(Dwarf_Off offset) { return Dies.value(offset /* + CuDieOff*/); }
+        bool hasDie(Dwarf_Off offset) { return Dies.contains(offset /* + CuDieOff*/); }
+
+        // Cached entries
+        struct TypeDieDetails {
+            QString displayName;
+            Dwarf_Half dwarfTag;
+            bool expandable;
+        };
+        QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
+    };
+
+    Result<int, Error> warnUnstartedGdb(); // TODO: Unimplemented, called to check if GDB not started and warn user
     Result<gdbmi::Response, Error> retryableGdbCommand(QString command, int timeout = 5000);
     Result<gdbmi::Response, Error> waitGdbResponse(uint64_t token, int timeout = 5000);
     void recoverGdbCrash();
+    Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
+    bool resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx);
 
 private slots:
     void gdbExited(bool normalExit, int exitCode);
@@ -69,6 +290,7 @@ private slots:
     void gdbWaitTimedOut();
 
 private:
+    // GDB Shenanigans
     GdbContainer m_gdb;
     QString m_symbolFileFullPath;
     bool m_gdbProperlySet;
@@ -79,4 +301,8 @@ private:
 
     gdbmi::Response m_lastGdbResponse;
     uint64_t m_expectedGdbResponseToken;
+
+    // libdwarf to the rescue
+    Dwarf_Debug m_dwarfDbg;
+    QVector<DwarfCuData> m_cus; ///< Index in this vec is used to find the specific CU
 };

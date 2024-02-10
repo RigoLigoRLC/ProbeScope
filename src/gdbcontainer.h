@@ -6,6 +6,11 @@
 #include <QMap>
 #include <QProcess>
 
+/**
+ * @brief GdbContainer only acts as a interface that wraps the plain process and the pipe based GDB/MI. You send
+ * commands into GdbContainer, and GdbContainer will signal back whenever a command finishes.
+ *
+ */
 class GdbContainer final : public QObject {
     Q_OBJECT
 
@@ -61,17 +66,6 @@ private:
      * @brief Buffered GDB stdout data. Parsing is only done when gdb returns a "(gdb)" prompt.
      */
     QByteArray m_gdbStdoutBuffer;
-
-    /**
-     * @brief Contains pending commands to be executed *after* GDB has started,
-     *        meaning this is only used when GDB start was requested but not running yet.
-     */
-    QMap<uint64_t, QString> m_pendingCommands;
-
-    /**
-     * @brief True once startGdb was called until GDB exits.
-     */
-    bool m_startupRequested;
 
     /**
      * @brief Only true when we actually want to shut down gdb (and exit has been sent).

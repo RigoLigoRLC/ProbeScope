@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/blank_file.svg</file>
+        <file>icons/structure.svg</file>
+        <file>icons/trivial_variable_floating_point.svg</file>
+        <file>icons/trivial_variable_integer.svg</file>
+        <file>icons/trivial_variable_trivial_pointer.svg</file>
+        <file>icons/trivial_variable_unsupported.svg</file>
+        <file>icons/trivial_variable_array.svg</file>
+    </qresource>
+</RCC>

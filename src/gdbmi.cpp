@@ -2,7 +2,8 @@
 #include "gdbmi.h"
 #include <QRegularExpression>
 
-// Code from https://github.com/martinribelotta/gdbfrontend/blob/master/debugmanager.cpp
+// ProbeScope:
+// Code taken from and based on https://github.com/martinribelotta/gdbfrontend/blob/master/debugmanager.cpp
 
 namespace gdbmi {
     QString escapedText(const QString &s) {
@@ -176,6 +177,12 @@ namespace gdbmi {
     }
 
     Response parse_response(const QString &gdb_mi_text) {
+        // Takes in all the output between the command execution and the result ("(gdb)\n" ending string),
+        // and spit one response out. The response would contain all the so-to-speak console messages
+        // in a list in the order they are printed out and in their unprocessed form (because it's rarely needed),
+        // and the command result.
+
+        // Original comments:
         // Parse gdb mi text and turn it into a dictionary.
         // See https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI-Stream-Records.html#GDB_002fMI-Stream-Records
         // for details on types of gdb mi output.
@@ -187,23 +194,32 @@ namespace gdbmi {
         //    message (str or None),
         //    payload (str, list, dict, or None)
         //
+        Response ret;
         QRegularExpressionMatch m;
-        if ((m = _GDB_MI_NOTIFY_RE.match(gdb_mi_text)).hasMatch()) {
-            return {Response::notify, m.captured(2), parseElements(m.captured(3)), strToInt(m.captured(1), -1)};
-        } else if ((m = _GDB_MI_RESULT_RE.match(gdb_mi_text)).hasMatch()) {
-            return {Response::result, m.captured(2), parseElements(m.captured(3)), strToInt(m.captured(1), -1)};
-        } else if ((m = _GDB_MI_CONSOLE_RE.match(gdb_mi_text)).hasMatch()) {
-            return {Response::console, m.captured(1), m.captured(0)};
-        } else if ((m = _GDB_MI_LOG_RE.match(gdb_mi_text)).hasMatch()) {
-            return {Response::log, m.captured(1), m.captured(0)};
-        } else if ((m = _GDB_MI_TARGET_OUTPUT_RE.match(gdb_mi_text)).hasMatch()) {
-            return {Response::target, m.captured(1), m.captured(0)};
-        } else if (_GDB_MI_RESPONSE_FINISHED_RE.match(gdb_mi_text).hasMatch()) {
-            return {Response::promt, {}, {}};
-        } else {
-            // This was not gdb mi output, so it must have just been printed by
-            // the inferior program that's being debugged
-            return {Response::unknown, {}, gdb_mi_text};
+
+        // Separate the text by line breaks
+        foreach (auto line, gdb_mi_text.split(gdbmi::EOL)) {
+            if ((m = _GDB_MI_NOTIFY_RE.match(line)).hasMatch()) {
+                ret.outputs.append({Response::ConsoleOutput::notify, line});
+            } else if ((m = _GDB_MI_RESULT_RE.match(line)).hasMatch()) {
+                ret.message = m.captured(2);
+                ret.payload = parseElements(m.captured(3));
+                ret.token = strToInt(m.captured(1), -1);
+            } else if ((m = _GDB_MI_CONSOLE_RE.match(line)).hasMatch()) {
+                ret.outputs.append({Response::ConsoleOutput::console, line});
+            } else if ((m = _GDB_MI_LOG_RE.match(line)).hasMatch()) {
+                ret.outputs.append({Response::ConsoleOutput::log, line});
+            } else if ((m = _GDB_MI_TARGET_OUTPUT_RE.match(line)).hasMatch()) {
+                ret.outputs.append({Response::ConsoleOutput::target, line});
+            } else if (_GDB_MI_RESPONSE_FINISHED_RE.match(line).hasMatch()) {
+                ret.outputs.append({Response::ConsoleOutput::promt, line});
+            } else {
+                // This was not gdb mi output, so it must have just been printed by
+                // the inferior program that's being debugged
+                ret.outputs.append({Response::ConsoleOutput::unknown, line});
+            }
         }
+
+        return ret;
     }
 }
