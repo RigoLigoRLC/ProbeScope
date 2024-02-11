@@ -788,6 +788,12 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
             details.expandable = false;
             break;
         }
+        case DW_TAG_subroutine_type: {
+            // TODO: Deal with function pointer
+            details.displayName = tr("Function pointer");
+            details.expandable = false;
+            break;
+        }
         case DW_TAG_enumeration_type: {
             // Enums are stored as basic types, take base type and prefix with "(enum) "
             DwarfAttrList attrs(m_dwarfDbg, die);
@@ -981,7 +987,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 for (Dwarf_Unsigned i = 0; i < upperbound + 1; i++) {
                     VariableNode node;
                     node.displayName = QString("[%1]").arg(i);
-                    node.displayTypeName = subtypeDetails.unwrap().displayName;
+                    node.displayTypeName = subtypeDetails.unwrap().displayName.arg("");
                     node.expandable = subtypeDetails.unwrap().expandable;
                     node.iconType = VariableIconType::Array;
                     node.typeSpec = deeperDimOff;
@@ -1004,7 +1010,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     return Err(subtypeDetailsResult.unwrapErr());
                 }
                 auto subtypeDetails = subtypeDetailsResult.unwrap();
-                for (Dwarf_Unsigned i = 0; i < upperbound; i++) {
+                for (Dwarf_Unsigned i = 0; i < upperbound + 1; i++) {
                     VariableNode node;
                     node.displayName = QString("[%1]").arg(i);
                     node.displayTypeName = subtypeDetails.displayName;
@@ -1037,7 +1043,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
             // node.address =// TODO: Addressing scheme???
             node.displayName = "*"; // Concatenate outside
             node.displayTypeName = result.unwrap().displayName;
-            node.expandable = true;
+            node.expandable = result.unwrap().expandable;
             node.iconType = dwarfTagToIconType(result.unwrap().dwarfTag);
             node.typeSpec = baseTypeOff;
             ret.subNodeDetails.append(node);
@@ -1099,23 +1105,11 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
             return Ok(ret);
             break;
         }
-        case DW_TAG_typedef: {
-            // Meaningless to application, pass through
-            DwarfAttrList attrs(m_dwarfDbg, die);
-            Dwarf_Attribute baseTypeAttr;
-            Dwarf_Off baseTypeOff;
-            Dwarf_Bool isInfo;
-            if (!(baseTypeAttr = attrs(DW_AT_type)) ||
-                dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
-                return Err(Error::LibdwarfApiFailure);
-            }
-            return tryExpandType(cuIndex, baseTypeOff, ctx);
-        }
+        case DW_TAG_typedef:
         case DW_TAG_atomic_type:
         case DW_TAG_restrict_type:
         case DW_TAG_const_type:
         case DW_TAG_volatile_type: {
-            QMessageBox::critical(nullptr, "", "WOAH!");
             // Meaningless to application, pass through
             DwarfAttrList attrs(m_dwarfDbg, die);
             Dwarf_Attribute baseTypeAttr;
