@@ -38,7 +38,13 @@ public:
         VariableEntries,
     };
 
-    enum SymbolItemDataRole { NeedsPopulateChildrenRole = Qt::UserRole + 1, NodeKindRole, CompileUnitIndexRole };
+    enum SymbolItemDataRole {
+        NeedsPopulateChildrenRole = Qt::UserRole + 1,
+        NodeKindRole,
+        CompileUnitIndexRole,
+        VariableNameRole,
+        TypespecRole, ///< DWARF type DIE offset
+    };
 
     void setSymbolBackend(SymbolBackend *);
 
@@ -59,4 +65,6 @@ private slots:
 
 private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);
+    void dynamicPopulateChildForVarnode(QTreeWidgetItem *item);
+    void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, uint32_t cuIndex);
 };

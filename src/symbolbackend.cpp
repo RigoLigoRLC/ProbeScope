@@ -522,48 +522,19 @@ Result<uint64_t, SymbolBackend::Error> SymbolBackend::getVariableChildrenCount(Q
     return Ok(ret);
 }
 
-Result<QList<SymbolBackend::VariableInfo>, SymbolBackend::Error> SymbolBackend::getVariableChildren(QString expr) {
+Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
+    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec) {
     // TODO:
-    QList<VariableInfo> ret;
+    QList<VariableNode> ret;
 
-    auto createResult = retryableGdbCommand(QString("-var-create - @ \"%1\"").arg(expr));
-    if (createResult.isErr()) {
-        return Err(createResult.unwrapErr());
-    }
-
-    auto payload = createResult.unwrap().payload.toMap();
-    auto name = payload["name"].toString();
-
-    auto getChildrenResult = retryableGdbCommand(QString("-var-list-children \"%1\"").arg(name));
-    if (getChildrenResult.isErr()) {
-        return Err(getChildrenResult.unwrapErr());
-    }
-
-    auto whatChildren = getChildrenResult.unwrap().payload.toMap()["children"];
-
-    // For all the children, get their path expressions
-    // This is a weird response, with a map full of same keys, wrapped in a list... WHYYY GDB??
-    auto childrenMap = getChildrenResult.unwrap().payload.toMap()["children"].toList()[0].toMap();
-    for (auto it = childrenMap.begin(); it != childrenMap.end(); it++) {
-        auto val = it->value<QVariantMap>();
-        VariableInfo varInfo;
-        varInfo.name = val["exp"].toString(); // It says it's an "expression" but it fits the name field best
-        varInfo.typeName = val["type"].toString();
-        varInfo.explainedType = explainType(val["type"].toString()).unwrapOr(QString());
-        varInfo.childrenCount = val["numchild"].toUInt();
-
-        // Try to get its full path
-        auto getPathExprResult =
-            retryableGdbCommand(QString("-var-info-path-expression \"%1\"").arg(val["name"].toString()));
-        if (getPathExprResult.isErr()) {
-            // Untolerable
-            return Err(getPathExprResult.unwrapErr());
-        }
-        varInfo.expression = getChildrenResult.unwrap().payload.toMap()["path_expr"].toString();
+    TypeResolutionContext ctx;
+    auto result = tryExpandType(cuIndex, typeSpec, ctx);
+    if (result.isErr()) {
+        return Err(result.unwrapErr());
     }
 
     // return Err(Error::NoError);
-    return Ok(QList<VariableInfo>{});
+    return Ok(result.unwrap());
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
@@ -645,6 +616,20 @@ Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::waitGdbResponse(uin
     }
 }
 
+bool SymbolBackend::ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie) {
+    auto &cu = m_cus[cuIndex];
+    if (cu.CachedTypes.contains(typeDie)) {
+        return true;
+    } else {
+        TypeResolutionContext ctx; ///< Leave as default; it's only for internal use
+        if (resolveTypeDetails(cuIndex, typeDie, ctx)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
 Result<SymbolBackend::DwarfCuData::TypeDieDetails, SymbolBackend::Error>
     SymbolBackend::getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie) {
     if (cuIndex >= m_cus.size()) {
@@ -652,15 +637,10 @@ Result<SymbolBackend::DwarfCuData::TypeDieDetails, SymbolBackend::Error>
     }
 
     auto &cu = m_cus[cuIndex];
-    if (cu.CachedTypes.contains(typeDie)) {
+    if (ensureTypeResolved(cuIndex, typeDie)) {
         return Ok(cu.CachedTypes[typeDie]);
     } else {
-        TypeResolutionContext ctx; ///< Leave as default; it's only for internal use
-        if (resolveTypeDetails(cuIndex, typeDie, ctx)) {
-            return Ok(cu.CachedTypes[typeDie]);
-        } else {
-            return Err(Error::LibdwarfApiFailure);
-        }
+        return Err(Error::LibdwarfApiFailure);
     }
 }
 
@@ -704,10 +684,7 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
             Dwarf_Bool isInfo;
             DwarfAttrList attrs(m_dwarfDbg, die);
             Q_ASSERT(attrs.has(DW_AT_type));
-            if (!(typeAttr = attrs(DW_AT_type))) {
-                return false;
-            }
-            if (dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
+            if (!(typeAttr = attrs(DW_AT_type)) || dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
                 return false;
             }
             ctx.arrayElementTypeOff = typeDieOff;
@@ -793,6 +770,7 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
                 details.displayName = result.unwrap().displayName + "%1" + QString("[%1]").arg(uboundStr);
                 details.expandable = true;
             }
+            details.arraySubrangeElementTypeDie = ctx.arrayElementTypeOff;
             break;
         }
         case DW_TAG_base_type: {
@@ -929,6 +907,253 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
     // }
     cu.CachedTypes[currentDieOff] = details;
     return true;
+}
+
+Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
+    SymbolBackend::tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx) {
+    //
+    ExpandNodeResult ret;
+
+    auto &cu = m_cus[cuIndex];
+    if (cuIndex >= m_cus.size() || !cu.hasDie(typeDie)) {
+        return Err(Error::InvalidParameter);
+    }
+    auto die = cu.die(typeDie);
+
+    Dwarf_Half dieTag;
+    if (dwarf_tag(die, &dieTag, NULL) != DW_DLV_OK) {
+        qDebug() << "Cannot get TAG for specified DIE" << typeDie;
+        return Err(Error::LibdwarfApiFailure);
+    }
+    ret.tag = dieTag;
+
+    switch (dieTag) {
+        case DW_TAG_array_type: {
+            // The real useful type info is the first subrange, return that instead
+            // Get the subrange and passthrough
+            Dwarf_Die childDie;
+            Dwarf_Off childDieOffset;
+            Dwarf_Half childDieTag;
+            if (dwarf_child(die, &childDie, NULL) != DW_DLV_OK ||
+                dwarf_die_CU_offset(childDie, &childDieOffset, NULL) != DW_DLV_OK ||
+                dwarf_tag(childDie, &childDieTag, NULL) != DW_DLV_OK || childDieTag != DW_TAG_subrange_type) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            // Still needs to pass the element type to the inner layers, that's why we have ctx here
+            // FIXME: we store element types in cache. Is this still needed?
+            Dwarf_Attribute typeAttr;
+            Dwarf_Off typeDieOff;
+            Dwarf_Bool isInfo;
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Q_ASSERT(attrs.has(DW_AT_type));
+            if (!(typeAttr = attrs(DW_AT_type)) || dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            ctx.arrayElementTypeOff = typeDieOff;
+            return tryExpandType(cuIndex, childDieOffset, ctx);
+            break;
+        }
+        case DW_TAG_subrange_type: {
+            // Take children count. An expandable array/subrange must contain valid ubound, simply use unsigned api
+            Dwarf_Unsigned upperbound;
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute uboundAttr;
+            if (!(uboundAttr = attrs(DW_AT_upper_bound)) ||
+                dwarf_formudata(uboundAttr, &upperbound, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            // Check if this is the deepest dimension
+            int dwRet;
+            Dwarf_Die deeperDim;
+            Dwarf_Off deeperDimOff;
+            dwRet = dwarf_siblingof_b(m_dwarfDbg, die, true, &deeperDim, NULL);
+            if (dwRet == DW_DLV_OK) {
+                // Has deeper dimension, use its offset as child type
+                if (dwarf_die_CU_offset(deeperDim, &deeperDimOff, NULL)) {
+                    return Err(Error::LibdwarfApiFailure);
+                }
+                // return Ok(std::tuple<uint32_t, Dwarf_Off>{upperbound, deeperDimOff});
+                // Build return data
+                auto subtypeDetails = getTypeDetails(cuIndex, deeperDimOff);
+                if (subtypeDetails.isErr()) {
+                    return Err(subtypeDetails.unwrapErr());
+                }
+                for (Dwarf_Unsigned i = 0; i < upperbound + 1; i++) {
+                    VariableNode node;
+                    node.displayName = QString("[%1]").arg(i);
+                    node.displayTypeName = subtypeDetails.unwrap().displayName;
+                    node.expandable = subtypeDetails.unwrap().expandable;
+                    node.iconType = VariableIconType::Array;
+                    node.typeSpec = deeperDimOff;
+                    // node.address = // TODO: Addressing scheme??
+                    ret.subNodeDetails.append(node);
+                }
+                return Ok(ret);
+            } else {
+                // Has no deeper dimension, use element type
+                if (!cu.CachedTypes.contains(typeDie)) {
+                    return Err(Error::LibdwarfApiFailure);
+                }
+                // return Ok(
+                //     std::tuple<uint32_t, Dwarf_Off>{upperbound,
+                //     cu.CachedTypes[typeDie].arraySubrangeElementTypeDie});
+                // Build return data
+                auto subTypeDieOff = cu.CachedTypes[typeDie].arraySubrangeElementTypeDie;
+                auto subtypeDetailsResult = getTypeDetails(cuIndex, subTypeDieOff);
+                if (subtypeDetailsResult.isErr()) {
+                    return Err(subtypeDetailsResult.unwrapErr());
+                }
+                auto subtypeDetails = subtypeDetailsResult.unwrap();
+                for (Dwarf_Unsigned i = 0; i < upperbound; i++) {
+                    VariableNode node;
+                    node.displayName = QString("[%1]").arg(i);
+                    node.displayTypeName = subtypeDetails.displayName;
+                    node.expandable = subtypeDetails.expandable;
+                    node.iconType = dwarfTagToIconType(subtypeDetails.dwarfTag);
+                    node.typeSpec = subTypeDieOff;
+                    // node.address = // TODO: Addressing scheme??
+                    ret.subNodeDetails.append(node);
+                }
+                return Ok(ret);
+            }
+            break;
+        }
+        case DW_TAG_pointer_type: {
+            // FIXME: return pointed object now, but in later days we will need to match GDB behavior
+            // Take base type and append "*"
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type)) ||
+                dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            auto result = getTypeDetails(cuIndex, baseTypeOff);
+            if (result.isErr()) {
+                return Err(result.unwrapErr());
+            }
+            VariableNode node;
+            // node.address =// TODO: Addressing scheme???
+            node.displayName = "*"; // Concatenate outside
+            node.displayTypeName = result.unwrap().displayName;
+            node.expandable = true;
+            node.iconType = dwarfTagToIconType(result.unwrap().dwarfTag);
+            node.typeSpec = baseTypeOff;
+            ret.subNodeDetails.append(node);
+            return Ok(ret);
+            // FIXME: consider logic for expanding basic types / structs/unions
+            break;
+        }
+        case DW_TAG_union_type:
+        case DW_TAG_structure_type:
+        case DW_TAG_class_type: {
+            // Take all members
+            Dwarf_Die child = 0;
+            if (dwarf_child(die, &child, NULL) != DW_DLV_OK) {
+                // Really...? A structure with nothing?
+                return Ok(ret);
+            }
+            forever {
+                Dwarf_Half tag;
+                if (dwarf_tag(child, &tag, NULL) != DW_DLV_OK) {
+                    return Err(Error::LibdwarfApiFailure);
+                }
+                if (tag == DW_TAG_member) {
+                    // Process this member
+                    DwarfAttrList attrs(m_dwarfDbg, child);
+                    Dwarf_Attribute nameAttr, typeAddr, locationAddr;
+                    if (!(nameAttr = attrs(DW_AT_name)) || !(typeAddr = attrs(DW_AT_type)) ||
+                        ((dieTag != DW_TAG_union_type) && !(locationAddr = attrs(DW_AT_data_member_location)))) {
+                        return Err(Error::LibdwarfApiFailure);
+                    }
+                    char *nameStr;
+                    Dwarf_Bool isInfo;
+                    Dwarf_Off typeOff;
+                    if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK ||
+                        dwarf_formref(typeAddr, &typeOff, &isInfo, NULL) != DW_DLV_OK) {
+                        return Err(Error::LibdwarfApiFailure);
+                    }
+                    auto result = getTypeDetails(cuIndex, typeOff);
+                    if (result.isErr()) {
+                        return Err(result.unwrapErr());
+                    }
+                    auto resultX = result.unwrap();
+                    VariableNode node;
+                    // node.address=// TODO: Addressing scheme?
+                    node.displayName = QString(nameStr);
+                    node.displayTypeName = resultX.displayName;
+                    node.iconType = dwarfTagToIconType(resultX.dwarfTag);
+                    node.typeSpec = typeOff;
+                    node.expandable = resultX.expandable;
+                    ret.subNodeDetails.append(node);
+                }
+                // Get next sibling
+                int dwRet = dwarf_siblingof_b(m_dwarfDbg, child, true, &child, NULL);
+                if (dwRet == DW_DLV_NO_ENTRY) {
+                    break;
+                } else if (dwRet != DW_DLV_OK) {
+                    return Err(Error::LibdwarfApiFailure);
+                }
+            }
+            return Ok(ret);
+            break;
+        }
+        case DW_TAG_typedef: {
+            // Meaningless to application, pass through
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type)) ||
+                dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            return tryExpandType(cuIndex, baseTypeOff, ctx);
+        }
+        case DW_TAG_atomic_type:
+        case DW_TAG_restrict_type:
+        case DW_TAG_const_type:
+        case DW_TAG_volatile_type: {
+            QMessageBox::critical(nullptr, "", "WOAH!");
+            // Meaningless to application, pass through
+            DwarfAttrList attrs(m_dwarfDbg, die);
+            Dwarf_Attribute baseTypeAttr;
+            Dwarf_Off baseTypeOff;
+            Dwarf_Bool isInfo;
+            if (!(baseTypeAttr = attrs(DW_AT_type)) ||
+                dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            return tryExpandType(cuIndex, baseTypeOff, ctx);
+        }
+    }
+    return Err(Error::InvalidParameter);
+}
+
+
+SymbolBackend::VariableIconType SymbolBackend::dwarfTagToIconType(Dwarf_Half tag) {
+    switch (tag) {
+        case DW_TAG_structure_type:
+        case DW_TAG_union_type:
+        case DW_TAG_class_type:
+            return VariableIconType::Structure;
+            break;
+        case DW_TAG_enumeration_type:
+        case DW_TAG_base_type:
+            return VariableIconType::Integer;
+            break;
+        case DW_TAG_array_type:
+        case DW_TAG_subrange_type:
+            return VariableIconType::Array;
+            break;
+        case DW_TAG_pointer_type:
+            return VariableIconType::Pointer;
+            break;
+        default:
+            return VariableIconType::Unknown;
+            break;
+    }
 }
 
 /***************************************** INTERNAL SLOTS *****************************************/

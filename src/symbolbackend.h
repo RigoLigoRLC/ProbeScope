@@ -103,6 +103,11 @@ public:
         Dwarf_Off typeSpec;
     };
 
+    struct ExpandNodeResult {
+        QVector<VariableNode> subNodeDetails;
+        Dwarf_Half tag;
+    };
+
     /**
      * @brief Convert SymbolBackend error enumeration values to error strings.
      *
@@ -162,13 +167,8 @@ public:
      */
     Result<uint64_t, Error> getVariableChildrenCount(QString expr);
 
-    /**
-     * @brief Get the children variables of an expression.
-     *
-     * @param expr Parent expression.
-     * @return On success: A list of variable info objects. On fail: error code.
-     */
-    Result<QList<VariableInfo>, Error> getVariableChildren(QString expr);
+    // TODO:
+    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec);
 
     /**
      * @brief Ask GDB about the real type info (traces typedefs) of a type name (with "whatis" command)
@@ -256,7 +256,6 @@ private:
         Dwarf_Off arrayElementTypeOff; ///< Array element type defined in DW_TAG_array_type
     };
 
-
     struct DwarfCuData {
         QString Name;                      ///< CU file name
         QString CompileDir;                ///< Directory in which it was compiled from
@@ -272,6 +271,7 @@ private:
         struct TypeDieDetails {
             QString displayName;
             Dwarf_Half dwarfTag;
+            Dwarf_Off arraySubrangeElementTypeDie; ///< Exclusively for subranges
             bool expandable;
         };
         QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
@@ -282,7 +282,12 @@ private:
     Result<gdbmi::Response, Error> waitGdbResponse(uint64_t token, int timeout = 5000);
     void recoverGdbCrash();
     Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
+    bool ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie);
     bool resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx);
+
+    // Return tuple: <child count, child type DIE offset>
+    Result<ExpandNodeResult, Error> tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx);
+    static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
 
 private slots:
     void gdbExited(bool normalExit, int exitCode);

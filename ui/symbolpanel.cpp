@@ -2,8 +2,10 @@
 #include "symbolpanel.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
+#include <QDebug>
 #include <QMessageBox>
-#include <qtreewidget.h>
+#include <QTreeWidget>
+
 
 SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     ui = new Ui::SymbolPanel;
@@ -46,61 +48,8 @@ QTreeWidgetItem *SymbolPanel::buildSymbolItem(SymbolBackend *const symbolBackend
                                               SymbolBackend::VariableInfo variable) {
     auto item = new QTreeWidgetItem;
     item->setText(0, variable.name);
-    // item->setData(0, TrivialTypeKind, int(SymbolTrivialType::Unsupported));
 
-    if (variable.childrenCount == 0) {
-        // Assume it is a trivial type, try take its type
-        auto trivialType = explainedTypeToTrivialType(variable.explainedType);
-        // item->setData(0, TrivialTypeKind, int(trivialType));
-
-        // Set expression
-        // item->setData(0, Expression, variable.expression);
-
-        // Set icon accordingly
-        switch (trivialType) {
-            case SymbolTrivialType::Uint8:
-            case SymbolTrivialType::Sint8:
-            case SymbolTrivialType::Uint16:
-            case SymbolTrivialType::Sint16:
-            case SymbolTrivialType::Uint32:
-            case SymbolTrivialType::Sint32:
-            case SymbolTrivialType::Uint64:
-            case SymbolTrivialType::Sint64:
-                item->setIcon(0, QIcon(":/icons/trivial_variable_integer.svg"));
-                break;
-            case SymbolTrivialType::Float32:
-            case SymbolTrivialType::Float64:
-                item->setIcon(0, QIcon(":/icons/trivial_variable_floating_point.svg"));
-                break;
-            case SymbolTrivialType::Unsupported:
-                item->setIcon(0, QIcon(":/icons/trivial_variable_unsupported.svg"));
-                break;
-        }
-
-        return item;
-    } else {
-        // Assume it is at least a structure or array
-
-        if (variable.typeName.contains(']')) {
-            // Has a bracket ending, assume it is an array
-            item->setIcon(0, QIcon(":/icons/trivial_variable_array.svg"));
-        }
-
-        // Only go through children when it's not an array because dealing with large arrays is SO SLOW
-        if (!variable.typeName.contains(']')) {
-            auto children = symbolBackend->getVariableChildren(variable.expression);
-            if (children.isErr()) {
-                item->setIcon(0, QIcon(":/icons/trivial_variable_unsupported.svg"));
-                return item;
-            }
-            // Process all children recursively
-            foreach (auto child, children.unwrap()) {
-                item->addChild(buildSymbolItem(symbolBackend, child));
-            }
-        }
-
-        return item;
-    }
+    return item;
 }
 
 
@@ -170,6 +119,7 @@ void SymbolPanel::sltItemExpanded(QTreeWidgetItem *item) {
                 dynamicPopulateChildForCU(item);
                 break;
             case NodeKind::VariableEntries:
+                dynamicPopulateChildForVarnode(item);
                 break;
         }
     }
@@ -193,33 +143,67 @@ void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
     // Insert new variables
     auto varList = result.unwrap();
     foreach (auto &var, varList) {
-        auto *subitem = new QTreeWidgetItem;
-        subitem->setText(0, QString("%1 (%2)").arg(var.displayName, var.displayTypeName));
-        if (var.expandable) {
-            markNeedsPopulate(subitem);
-        }
-        switch (var.iconType) {
-            case SymbolBackend::VariableIconType::Boolean:
-            case SymbolBackend::VariableIconType::Integer:
-                subitem->setIcon(0, QIcon(":/icons/trivial_variable_integer.svg"));
-                break;
-            case SymbolBackend::VariableIconType::FloatingPoint:
-                subitem->setIcon(0, QIcon(":/icons/trivial_variable_floating_point.svg"));
-                break;
-            case SymbolBackend::VariableIconType::Structure:
-                subitem->setIcon(0, QIcon(":/icons/structure.svg"));
-                break;
-            case SymbolBackend::VariableIconType::Pointer:
-                subitem->setIcon(0, QIcon(":/icons/trivial_variable_trivial_pointer.svg"));
-                break;
-            case SymbolBackend::VariableIconType::Array:
-                subitem->setIcon(0, QIcon(":/icons/trivial_variable_array.svg"));
-                break;
-            case SymbolBackend::VariableIconType::Unknown:
-                subitem->setIcon(0, QIcon(":/icons/trivial_variable_unsupported.svg"));
-                break;
-        }
-
-        item->addChild(subitem);
+        insertNodeByVarnodeInfo(var, item, cuIndex);
     }
+}
+
+void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
+    auto varName = item->data(0, VariableNameRole).toString();
+    auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
+    auto typespec = item->data(0, TypespecRole).toULongLong();
+
+    auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typespec);
+    if (result.isErr()) {
+        // TODO:
+        qCritical() << "Failed to expand Varnode" << varName;
+        return;
+    }
+
+    // Delete children
+    auto childCount = item->childCount();
+    for (int i = 0; i < childCount; i++) {
+        auto child = item->takeChild(0);
+        delete child;
+    }
+
+    // Insert new variables
+    auto varList = result.unwrap().subNodeDetails;
+    foreach (auto &var, varList) {
+        insertNodeByVarnodeInfo(var, item, cuIndex);
+    }
+}
+
+void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTreeWidgetItem *parent, uint32_t cuIndex) {
+    auto *subitem = new QTreeWidgetItem;
+    subitem->setText(0, QString("%1 (%2)").arg(var.displayName, var.displayTypeName));
+    subitem->setData(0, VariableNameRole, var.displayName);
+    subitem->setData(0, CompileUnitIndexRole, cuIndex);
+    subitem->setData(0, TypespecRole, var.typeSpec);
+    subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
+    if (var.expandable) {
+        markNeedsPopulate(subitem);
+    }
+    switch (var.iconType) {
+        case SymbolBackend::VariableIconType::Boolean:
+        case SymbolBackend::VariableIconType::Integer:
+            subitem->setIcon(0, QIcon(":/icons/trivial_variable_integer.svg"));
+            break;
+        case SymbolBackend::VariableIconType::FloatingPoint:
+            subitem->setIcon(0, QIcon(":/icons/trivial_variable_floating_point.svg"));
+            break;
+        case SymbolBackend::VariableIconType::Structure:
+            subitem->setIcon(0, QIcon(":/icons/structure.svg"));
+            break;
+        case SymbolBackend::VariableIconType::Pointer:
+            subitem->setIcon(0, QIcon(":/icons/trivial_variable_trivial_pointer.svg"));
+            break;
+        case SymbolBackend::VariableIconType::Array:
+            subitem->setIcon(0, QIcon(":/icons/trivial_variable_array.svg"));
+            break;
+        case SymbolBackend::VariableIconType::Unknown:
+            subitem->setIcon(0, QIcon(":/icons/trivial_variable_unsupported.svg"));
+            break;
+    }
+
+    parent->addChild(subitem);
 }
