@@ -5,13 +5,24 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QTreeWidget>
-
+#include <qglobal.h>
+#include <qmessagebox.h>
+#include <qtreewidget.h>
 
 SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     ui = new Ui::SymbolPanel;
     ui->setupUi(this);
 
+    // Set props for sorter column
+    ui->treeSymbolTree->sortByColumn(SortCol, Qt::AscendingOrder);
+    ui->treeSymbolTree->setColumnHidden(SortCol, true);
+
+    // Initialize rich text item delegate
+    m_htmlDelegate = new HTMLDelegate(this);
+    ui->treeSymbolTree->setItemDelegateForColumn(GeneralCol, m_htmlDelegate);
+
     connect(ui->treeSymbolTree, &QTreeWidget::itemExpanded, this, &SymbolPanel::sltItemExpanded);
+    connect(ui->btnAddWatchEntry, &QPushButton::clicked, this, &SymbolPanel::sltAddWatchEntryClicked);
 }
 
 SymbolPanel::~SymbolPanel() {
@@ -31,12 +42,14 @@ bool SymbolPanel::buildRootFiles(SymbolBackend *const symbolBackend) {
         return false;
     }
 
+    size_t index = 0;
     foreach (auto src, result.unwrap()) {
         auto *fileItem = new QTreeWidgetItem;
-        fileItem->setText(0, src.path);
-        fileItem->setIcon(0, QIcon(":/icons/blank_file.svg"));
-        fileItem->setData(0, NodeKindRole, uint32_t(NodeKind::CompileUnit));
-        fileItem->setData(0, CompileUnitIndexRole, src.cuIndex);
+        fileItem->setText(GeneralCol, src.path);
+        fileItem->setIcon(GeneralCol, QIcon(":/icons/blank_file.svg"));
+        fileItem->setData(GeneralCol, NodeKindRole, uint32_t(NodeKind::CompileUnit));
+        fileItem->setData(GeneralCol, CompileUnitIndexRole, src.cuIndex);
+        fileItem->setText(SortCol, QString::number(index++));
         markNeedsPopulate(fileItem);
         ui->treeSymbolTree->addTopLevelItem(fileItem);
     }
@@ -50,58 +63,6 @@ QTreeWidgetItem *SymbolPanel::buildSymbolItem(SymbolBackend *const symbolBackend
     item->setText(0, variable.name);
 
     return item;
-}
-
-
-SymbolPanel::SymbolTrivialType SymbolPanel::explainedTypeToTrivialType(QString explainedType) {
-    // Specs taken from https://downloads.ti.com/docs/esd/SPNU151T/data-types-stdz0555922.html
-    // This is a horrible hack just because GDB won't tell you how wide a variable is in any sensible way
-    bool signedness = false, fp = false;
-    int length = 0;
-
-    // FIXME: I would not apologize for any other MCUs that has 16 or 64 bit word width.
-    // I only have ARM based ones and that's what I develop with.
-    // GDB won't tell me the width of a variable properly so haters please just fuck with GNU directly.
-    // GDB is responsible, not me.
-
-    if (explainedType.startsWith("uint") || explainedType.startsWith("unsigned")) {
-        signedness = true;
-    }
-
-    if (explainedType.contains("long long") || explainedType.endsWith("int64_t")) {
-        length = 8;
-    } else if (explainedType.contains("long") || explainedType.endsWith("int32_t")) {
-        length = 4;
-    } else if (explainedType.contains("short") || explainedType.endsWith("int16_t")) {
-        length = 2;
-    } else if (explainedType.contains("char") || explainedType.endsWith("int8_t")) {
-        length = 1;
-    } else if (explainedType.contains("int")) {
-        length = 4;
-    } else if (explainedType.contains("float")) {
-        length = 4;
-        fp = true;
-    } else if (explainedType.contains("double") && !explainedType.contains("long double")) {
-        length = 8;
-        fp = true;
-    }
-
-    switch (length) {
-        case 1:
-            return (signedness ? SymbolTrivialType::Sint8 : SymbolTrivialType::Uint8);
-        case 2:
-            return (signedness ? SymbolTrivialType::Sint16 : SymbolTrivialType::Uint16);
-        case 4:
-            if (fp) {
-                return SymbolTrivialType::Float32;
-            } else {
-                return (signedness ? SymbolTrivialType::Sint32 : SymbolTrivialType::Uint32);
-            }
-        case 8:
-            return (signedness ? SymbolTrivialType::Sint64 : SymbolTrivialType::Uint64);
-        default:
-            return SymbolTrivialType::Unsupported;
-    }
 }
 
 void SymbolPanel::markNeedsPopulate(QTreeWidgetItem *item) {
@@ -125,6 +86,71 @@ void SymbolPanel::sltItemExpanded(QTreeWidgetItem *item) {
     }
 }
 
+void SymbolPanel::sltAddWatchEntryClicked() {
+    auto selected = ui->treeSymbolTree->selectedItems();
+    if (selected.isEmpty() || selected.size() > 1) {
+        return;
+    }
+
+    // Traverse to the topmost parent item
+    QList<QTreeWidgetItem *> nodeChain;
+    auto currentItem = selected[0];
+    while (currentItem && NodeKind(currentItem->data(GeneralCol, NodeKindRole).toUInt()) != NodeKind::CompileUnit) {
+        nodeChain.append(currentItem);
+        currentItem = currentItem->parent();
+    }
+    Q_ASSERT(nodeChain.size() >= 1);
+
+    QString expr = nodeChain.last()->data(GeneralCol, VariableNameRole).toString();
+    // Now the node chain is formed, index 0 is innermost node, we traverse from the outmost element
+    // Note that the outmost node would be put into expr directly, before the loop starts
+    // Inside the loop we process the relationship between current and parent node, with knowledge of inner node
+    if (nodeChain.size() >= 2) {
+        for (int i = nodeChain.size() - 2; i >= 0; i--) {
+            QTreeWidgetItem *current = nodeChain[i], *parent = nodeChain[i + 1], *inner = nullptr;
+            if (i) {
+                inner = nodeChain[i - 1];
+            }
+
+
+            switch (SymbolBackend::VariableIconType(parent->data(GeneralCol, IconTypeRole).toUInt())) {
+                case SymbolBackend::VariableIconType::Integer:
+                case SymbolBackend::VariableIconType::FloatingPoint:
+                case SymbolBackend::VariableIconType::Boolean:
+                    Q_ASSERT(false);
+                    break;
+                case SymbolBackend::VariableIconType::Structure:
+                    // Parent = struct/union/class, Current = member
+                    expr = QString("%1.%2").arg(expr).arg(current->data(GeneralCol, VariableNameRole).toString());
+                    break;
+                case SymbolBackend::VariableIconType::Pointer:
+                    // Parent = ptr, Current = deref'd
+                    // Some percise logics:
+                    // If current = ptr (parent is high order pointer), don't use parenthesis;
+                    // If inner is null (current is already deepest), don't use parenthesis
+                    if (current->data(GeneralCol, IconTypeRole).toUInt() ==
+                            uint32_t(SymbolBackend::VariableIconType::Pointer) ||
+                        !inner) {
+                        expr.prepend('*');
+                    } else {
+                        expr = QString("(*%1)").arg(expr);
+                    }
+                    continue;
+                case SymbolBackend::VariableIconType::Array:
+                    // Parent = array/subrange, Current = index'd
+                    expr = QString("%1[%2]").arg(expr).arg(current->text(SortCol));
+                    break;
+                case SymbolBackend::VariableIconType::Unknown:
+                    Q_ASSERT(false);
+                    break;
+            }
+        }
+    }
+
+
+    QMessageBox::information(this, "Expression generation", expr);
+}
+
 void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
     auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
 
@@ -142,8 +168,9 @@ void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
 
     // Insert new variables
     auto varList = result.unwrap();
+    size_t index = 0;
     foreach (auto &var, varList) {
-        insertNodeByVarnodeInfo(var, item, cuIndex);
+        insertNodeByVarnodeInfo(var, item, cuIndex, index++);
     }
 }
 
@@ -168,18 +195,27 @@ void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
 
     // Insert new variables
     auto varList = result.unwrap().subNodeDetails;
+    size_t index = 0;
     foreach (auto &var, varList) {
-        insertNodeByVarnodeInfo(var, item, cuIndex);
+        insertNodeByVarnodeInfo(var, item, cuIndex, index++);
     }
 }
 
-void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTreeWidgetItem *parent, uint32_t cuIndex) {
+void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTreeWidgetItem *parent, uint32_t cuIndex,
+                                          size_t sortColIdx) {
     auto *subitem = new QTreeWidgetItem;
-    subitem->setText(0, QString("%1 (%2)").arg(var.displayName, var.displayTypeName));
+    auto escapedDisplayTypeName = var.displayTypeName;
+    escapedDisplayTypeName.replace('<', "&lt;").replace('>', "&gt;");
+    subitem->setText(0, QString("<html><span style=\"font-size:9pt;\">"
+                                "%1 <span style=\"font-style:italic;color:#9f9f9f;\">(%2)<span/>"
+                                "<span/><html/>")
+                            .arg(var.displayName, escapedDisplayTypeName));
     subitem->setData(0, VariableNameRole, var.displayName);
     subitem->setData(0, CompileUnitIndexRole, cuIndex);
     subitem->setData(0, TypespecRole, var.typeSpec);
     subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
+    subitem->setData(GeneralCol, IconTypeRole, uint32_t(var.iconType));
+    subitem->setText(SortCol, QString::number(sortColIdx));
     if (var.expandable) {
         markNeedsPopulate(subitem);
     }

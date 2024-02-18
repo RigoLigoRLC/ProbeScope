@@ -1,9 +1,11 @@
 
 #pragma once
 
+#include "delegate/htmldelegate.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
 #include <qtreewidget.h>
+
 
 class SymbolPanel : public QWidget {
     Q_OBJECT
@@ -43,8 +45,11 @@ public:
         NodeKindRole,
         CompileUnitIndexRole,
         VariableNameRole,
+        IconTypeRole,
         TypespecRole, ///< DWARF type DIE offset
     };
+
+    enum ColumnKind { GeneralCol, SortCol };
 
     void setSymbolBackend(SymbolBackend *);
 
@@ -59,12 +64,15 @@ public:
 
 private:
     SymbolBackend *m_symbolBackend;
+    HTMLDelegate *m_htmlDelegate;
 
 private slots:
     void sltItemExpanded(QTreeWidgetItem *item);
+    void sltAddWatchEntryClicked();
 
 private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);
     void dynamicPopulateChildForVarnode(QTreeWidgetItem *item);
-    void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, uint32_t cuIndex);
+    void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, uint32_t cuIndex,
+                                 size_t sortColIdx);
 };

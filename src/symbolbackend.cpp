@@ -132,6 +132,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
             dwarf_dealloc_die(it->CuDie);
         }
         m_cus.clear();
+        m_qualifiedSourceFiles.clear();
 
         // Discard previous file
         dwRet = dwarf_finish(m_dwarfDbg);
@@ -142,13 +143,6 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         return Err(Error::LibdwarfApiFailure);
     }
 
-    m_progressDialog.close();
-
-    return Ok();
-}
-
-Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::getSourceFileList() {
-    QList<SourceFile> ret;
 
     // Refresh our symbol table, with a similar structure of GDB/MI's serialization format
     m_progressDialog.setLabelText(tr("Refreshing symbols..."));
@@ -164,7 +158,7 @@ Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::ge
     Dwarf_Unsigned typeoffset = 0;
     Dwarf_Unsigned next_cu_header = 0;
     Dwarf_Half header_cu_type = 0;
-    int dwRet = DW_DLV_OK;
+    dwRet = DW_DLV_OK;
 
     // Iterate until all CU are drained
     forever {
@@ -202,7 +196,7 @@ Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::ge
             continue;
         }
         srcFile.path = QString(nameStr);
-        srcFile.cuIndex = ret.size();
+        srcFile.cuIndex = m_cus.size();
         // qDebug() << "CU file name" << nameStr;
 
         // Cache CU data, all children etc
@@ -322,10 +316,18 @@ Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::ge
         m_cus.append(cuData);
 
         // Add as a valid CU for returning
-        ret.append(srcFile);
+        if (isCuQualifiedSourceFile(cuData)) {
+            m_qualifiedSourceFiles.append(srcFile);
+        }
     }
 
-    return Ok(ret);
+    m_progressDialog.close();
+
+    return Ok();
+}
+
+Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::getSourceFileList() {
+    return Ok(m_qualifiedSourceFiles);
 }
 
 Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
@@ -528,7 +530,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
     QList<VariableNode> ret;
 
     TypeResolutionContext ctx;
-    auto result = tryExpandType(cuIndex, typeSpec, ctx);
+    auto result = tryExpandType(cuIndex, typeSpec, ctx, varName);
     if (result.isErr()) {
         return Err(result.unwrapErr());
     }
@@ -614,6 +616,41 @@ Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::waitGdbResponse(uin
     } else {
         return Ok(m_lastGdbResponse);
     }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+///                     GDB GARBAGE ABOVE
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+bool SymbolBackend::isCuQualifiedSourceFile(DwarfCuData &cu) {
+    auto &topDies = cu.TopDies, &allDies = cu.Dies;
+
+    // Find valid variable DIEs, if there is, return true
+    for (auto it = topDies.constBegin(); it != topDies.constEnd(); it++) {
+        Dwarf_Half tag;
+        if (dwarf_tag(it.value(), &tag, NULL) != DW_DLV_OK) {
+            return false;
+        }
+        if (tag != DW_TAG_variable) {
+            continue;
+        }
+
+
+        Dwarf_Die actualVariableDie = it.value();
+        DwarfAttrList attrs(m_dwarfDbg, it.value());
+
+        // Take address
+        Dwarf_Attribute addrAttr = attrs(DW_AT_location);
+        if (!addrAttr) {
+            // If a variable has no address, discard it
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 bool SymbolBackend::ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie) {
@@ -768,7 +805,7 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
                 }
                 auto uboundStr = hasUpperBound ? QString::number(upperBound.s + 1) : "";
                 details.displayName = result.unwrap().displayName + "%1" + QString("[%1]").arg(uboundStr);
-                details.expandable = true;
+                details.expandable = hasUpperBound;
             }
             details.arraySubrangeElementTypeDie = ctx.arrayElementTypeOff;
             break;
@@ -821,7 +858,9 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
             Dwarf_Off baseTypeOff;
             Dwarf_Bool isInfo;
             if (!(baseTypeAttr = attrs(DW_AT_type))) {
-                return false;
+                details.displayName = "void*";
+                details.expandable = false;
+                break;
             }
             if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
                 return false;
@@ -916,7 +955,7 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
 }
 
 Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
-    SymbolBackend::tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx) {
+    SymbolBackend::tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx, QString varName) {
     //
     ExpandNodeResult ret;
 
@@ -956,7 +995,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 return Err(Error::LibdwarfApiFailure);
             }
             ctx.arrayElementTypeOff = typeDieOff;
-            return tryExpandType(cuIndex, childDieOffset, ctx);
+            return tryExpandType(cuIndex, childDieOffset, ctx, varName);
             break;
         }
         case DW_TAG_subrange_type: {
@@ -986,7 +1025,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 }
                 for (Dwarf_Unsigned i = 0; i < upperbound + 1; i++) {
                     VariableNode node;
-                    node.displayName = QString("[%1]").arg(i);
+                    node.displayName = QString("%1[%2]").arg(varName).arg(i);
                     node.displayTypeName = subtypeDetails.unwrap().displayName.arg("");
                     node.expandable = subtypeDetails.unwrap().expandable;
                     node.iconType = VariableIconType::Array;
@@ -1012,7 +1051,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 auto subtypeDetails = subtypeDetailsResult.unwrap();
                 for (Dwarf_Unsigned i = 0; i < upperbound + 1; i++) {
                     VariableNode node;
-                    node.displayName = QString("[%1]").arg(i);
+                    node.displayName = QString("%1[%2]").arg(varName).arg(i);
                     node.displayTypeName = subtypeDetails.displayName;
                     node.expandable = subtypeDetails.expandable;
                     node.iconType = dwarfTagToIconType(subtypeDetails.dwarfTag);
@@ -1041,7 +1080,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
             }
             VariableNode node;
             // node.address =// TODO: Addressing scheme???
-            node.displayName = "*"; // Concatenate outside
+            node.displayName = QString("(*%1)").arg(varName);
             node.displayTypeName = result.unwrap().displayName;
             node.expandable = result.unwrap().expandable;
             node.iconType = dwarfTagToIconType(result.unwrap().dwarfTag);
@@ -1071,7 +1110,9 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     Dwarf_Attribute nameAttr, typeAddr, locationAddr;
                     if (!(nameAttr = attrs(DW_AT_name)) || !(typeAddr = attrs(DW_AT_type)) ||
                         ((dieTag != DW_TAG_union_type) && !(locationAddr = attrs(DW_AT_data_member_location)))) {
-                        return Err(Error::LibdwarfApiFailure);
+                        // NOTE: A static member in a class CAN have no DW_AT_data_member_location and have a
+                        // DW_AT_const_value instead
+                        goto NextSibling;
                     }
                     char *nameStr;
                     Dwarf_Bool isInfo;
@@ -1094,6 +1135,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     node.expandable = resultX.expandable;
                     ret.subNodeDetails.append(node);
                 }
+            NextSibling:
                 // Get next sibling
                 int dwRet = dwarf_siblingof_b(m_dwarfDbg, child, true, &child, NULL);
                 if (dwRet == DW_DLV_NO_ENTRY) {
@@ -1119,7 +1161,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
                 return Err(Error::LibdwarfApiFailure);
             }
-            return tryExpandType(cuIndex, baseTypeOff, ctx);
+            return tryExpandType(cuIndex, baseTypeOff, ctx, varName);
         }
     }
     return Err(Error::InvalidParameter);

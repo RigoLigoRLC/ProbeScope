@@ -12,9 +12,6 @@
 #include <QTimer>
 #include <result.h>
 
-
-
-
 /**
  * @brief SymbolBacked uses GdbContainer under the hood to provide all the necessary symbol information
  *        for data acquisition. Because it only has to evaluate the expressions very infrequently, it
@@ -77,6 +74,18 @@ public:
         Float32,
         Float64,
         Unsupported,
+    };
+
+    /**
+     * @brief Expression generation is done by symbol panel. When symbol panel generate expression, it gets the variable
+     * name represented by the currently selected node, then rewinds up to the root (CU), in this process, the parent
+     * nodes are checked individually, their relations to the children nodes are checked, expression is generated from
+     * inside out. This enumeration describes the parent-child relation used in this process.
+     */
+    enum class ExprGenRelation {
+        Deref,  ///< Parent is a pointer and child is a dereferenced item
+        Index,  ///< Parent is a pointer/array and child is the result of indexing with square brackets
+        Member, ///< Parent is a structure/union/class and child is a member of it
     };
 
     struct TypeSpec {};
@@ -281,12 +290,14 @@ private:
     Result<gdbmi::Response, Error> retryableGdbCommand(QString command, int timeout = 5000);
     Result<gdbmi::Response, Error> waitGdbResponse(uint64_t token, int timeout = 5000);
     void recoverGdbCrash();
+
+    bool isCuQualifiedSourceFile(DwarfCuData &cuData);
     Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
     bool ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie);
     bool resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx);
 
-    // Return tuple: <child count, child type DIE offset>
-    Result<ExpandNodeResult, Error> tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx);
+    Result<ExpandNodeResult, Error> tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx,
+                                                  QString varName);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
 
 private slots:
@@ -309,5 +320,6 @@ private:
 
     // libdwarf to the rescue
     Dwarf_Debug m_dwarfDbg;
-    QVector<DwarfCuData> m_cus; ///< Index in this vec is used to find the specific CU
+    QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
+    QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
 };
