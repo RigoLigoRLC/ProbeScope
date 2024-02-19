@@ -12,9 +12,8 @@ public:
     enum class TokenType {
         // Special
         EndOfFile = 0,
-        ScopedIdentifier, // Scoped identifier, like when taking a type inside a namespace
-        Identifier,       // Bare identifier, like when taking member
-        IntegerLiteral,   // Can be hex
+        Identifier,
+        IntegerLiteral, // Can be hex
 
         // Keywords
         Sizeof, // "sizeof"
@@ -33,7 +32,57 @@ public:
         Minus,     // -
         Dot,       // .
 
-        Arrow, // ->
+        Arrow,       // ->
+        DoubleColon, // ::
     };
-    static Result<QList<QPair<TokenType, QVariant>>, QString> parseToTokens(QString expression);
+
+    enum LexerState {
+        EXPR,
+        OFFSET_EXPR,
+        OFFSET_EXPR_B,
+        UNARY_EXPR,
+        UNARY_SYM,
+        CAST_EXPR,
+        POSTFIX_EXPR,
+        POSTFIX_EXPR_B,
+        PRI_EXPR,
+
+        TYPE_IDENT,
+        POSTFIX_TYPE_IDENT,
+        POSTFIX_TYPE_IDENT_B,
+        SCOPED_IDENT,
+        SCOPED_IDENT_B,
+
+        DET_EXPR,
+        ADD_DET_EXPR_B,
+        MUL_DET_EXPR,
+        MUL_DET_EXPR_B,
+        UNARY_DET_EXPR,
+        PRI_DET_EXPR,
+
+        OPEN_PARENTH,
+        OPEN_BRACKET,
+        OPEN_BRACE,
+        CLOSE_PARENTH,
+        CLOSE_BRACKET,
+        CLOSE_BRACE,
+        ARROW,
+        DOT,
+        DBL_COLON,
+        SIZEOF,
+        ASTERISK,
+        PLUS,
+        MINUS,
+
+        // Axioms
+        IDENT,
+        INT_LIT,
+
+    };
+
+    struct Token {
+        TokenType type;
+        QVariant embedData;
+    };
+    static Result<QList<Token>, QString> parseToTokens(QString expression);
 };
