@@ -12,8 +12,12 @@ public:
     enum class TokenType {
         // Special
         EndOfFile = 0,
-        Identifier,
-        IntegerLiteral, // Can be hex
+        ScopedIdentifier, // Scoped identifier, like when taking a type inside a namespace
+        Identifier,       // Bare identifier, like when taking member
+        IntegerLiteral,   // Can be hex
+
+        // Keywords
+        Sizeof, // "sizeof"
 
         // Used in pairs
         OpeningParenthesis, // (
@@ -23,10 +27,11 @@ public:
         OpeningBrace,       // {
         ClosingBrace,       // }
 
-        Asterisk, // *
-        Plus,     // +
-        Minus,    // -
-        Dot,      // .
+        Ampersand, // &
+        Asterisk,  // *
+        Plus,      // +
+        Minus,     // -
+        Dot,       // .
 
         Arrow, // ->
     };

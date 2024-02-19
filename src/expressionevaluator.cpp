@@ -58,6 +58,7 @@ Grammar definition in LL(1) style:
 
     PRI_EXPR ->
         '('; SCOPED_IDENT; ')' |
+        '{'; SCOPED_IDENT; '}' | [Curly braces means eval only once or on user demand]
         IDENT
 
     POSTFIX_EXPR_B ->
