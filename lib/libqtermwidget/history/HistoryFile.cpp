@@ -85,7 +85,7 @@ HistoryFile::HistoryFile()
     _tmpFile.setFileTemplate(tmpFormat);
     if (_tmpFile.open()) {
 #if defined(Q_OS_LINUX)
-        qCDebug(KonsoleDebug, "HistoryFile: /proc/%lld/fd/%d", qApp->applicationPid(), _tmpFile.handle());
+        // qCDebug(KonsoleDebug, "HistoryFile: /proc/%lld/fd/%d", qApp->applicationPid(), _tmpFile.handle());
 #endif
         // On some systems QTemporaryFile creates unnamed file.
         // Do not interfere in such cases.

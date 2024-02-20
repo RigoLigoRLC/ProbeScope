@@ -18,6 +18,8 @@ if (NOT TARGET qmsetup::library)
         RESULT_PATH _package_path
     )
 
+    message("Package path for qmsetup: ${_package_path}")
+
     # Find package again
     find_package(qmsetup REQUIRED PATHS ${_package_path})
 

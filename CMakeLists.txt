@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.19)
 project(probescope)
 
 # Setup host tools
+include(cmake/DetectIsVcpkgToolchain.cmake)
 include(cmake/InplaceSetupQmsetup.cmake)
 include(cmake/InplaceSetupQasc.cmake)
 add_subdirectory(cmake/corrosion)
@@ -35,7 +36,7 @@ set(QAPPLICATION_CLASS QApplication CACHE STRING "Inheritance class for SingleAp
 add_subdirectory(lib/singleapplication)
 
 # Import libdwarf
-find_package(libdwarf CONFIG REQUIRED)
+include(cmake/ImportLibdwarf.cmake)
 
 # Add include directories
 include_directories(src ui)
@@ -62,7 +63,7 @@ qm_configure_target(probescope
         qtermwidget
         qt5advanceddocking
         SingleApplication::SingleApplication
-        libdwarf::dwarf
+        ${libdwarf_LINK_LIBRARIES}
 
     INCLUDE_PRIVATE
         inc

@@ -17,9 +17,10 @@ if (NOT QASTOOL_INCLUDE_DIRS)
         CONFIGURE_ARGS -DQAS_BUILD_EXAMPLES=OFF
         RESULT_PATH _package_path
     )
+    message("Package path for qmsetup: ${_package_path}")
 
     # Find package again
-    find_package(qastool REQUIRED PATHS ${_package_path})
+    find_package(QasTool REQUIRED PATHS ${_package_path})
 
     # Update import path
     set(qastool_DIR ${_package_path} CACHE PATH "" FORCE)
