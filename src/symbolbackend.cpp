@@ -5,8 +5,8 @@
 #include "symbolpanel.h"
 #include <QDebug>
 #include <QMessageBox>
-#include <libdwarf/dwarf.h>
-#include <libdwarf/libdwarf.h>
+#include <dwarf.h>
+#include <libdwarf.h>
 
 
 

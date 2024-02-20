@@ -206,7 +206,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     auto *subitem = new QTreeWidgetItem;
     auto escapedDisplayTypeName = var.displayTypeName;
     escapedDisplayTypeName.replace('<', "&lt;").replace('>', "&gt;");
-    subitem->setText(0, QString("<html><span style=\"font-size:9pt;\">"
+    subitem->setText(0, QString("<html><span>"
                                 "%1 <span style=\"font-style:italic;color:#9f9f9f;\">(%2)<span/>"
                                 "<span/><html/>")
                             .arg(var.displayName, escapedDisplayTypeName));

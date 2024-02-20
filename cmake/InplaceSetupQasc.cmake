@@ -14,6 +14,7 @@ if (NOT QASTOOL_INCLUDE_DIRS)
     qm_install_package(qastool
         SOURCE_DIR ${_source_dir}
         BUILD_TYPE Release
+        CONFIGURE_ARGS -DQAS_BUILD_EXAMPLES=OFF
         RESULT_PATH _package_path
     )
 

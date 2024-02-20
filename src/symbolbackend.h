@@ -2,7 +2,7 @@
 #pragma once
 
 #include "gdbcontainer.h"
-#include "libdwarf/libdwarf.h"
+#include "libdwarf.h"
 #include <QEventLoop>
 #include <QHash>
 #include <QMap>

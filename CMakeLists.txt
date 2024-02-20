@@ -8,11 +8,15 @@ include(cmake/InplaceSetupQmsetup.cmake)
 include(cmake/InplaceSetupQasc.cmake)
 add_subdirectory(cmake/corrosion)
 
+# Set C++ standard  
+set(CMAKE_CXX_STANDARD 17)
+
 # Setup absolutely necessary Qt stuff
+set(QT_VERSION_MAJOR 5)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-qm_find_qt(LinguistTools)
+qm_find_qt(Core Widgets Svg LinguistTools)
 
 # Import libpsprobe
 corrosion_import_crate(MANIFEST_PATH lib/libpsprobe/Cargo.toml)
@@ -58,7 +62,7 @@ qm_configure_target(probescope
         qtermwidget
         qt5advanceddocking
         SingleApplication::SingleApplication
-        libdwarf::dwarf-shared
+        libdwarf::dwarf
 
     INCLUDE_PRIVATE
         inc
