@@ -10,7 +10,7 @@
 
 
 
-SymbolBackend::SymbolBackend(QString gdbExecutable, QObject *parent) : QObject(parent) {
+SymbolBackend::SymbolBackend(QObject *parent) : QObject(parent) {
     m_symbolFileFullPath = "";
     m_gdbProperlySet = false;
     m_waitTimer.setSingleShot(true);
@@ -20,14 +20,6 @@ SymbolBackend::SymbolBackend(QString gdbExecutable, QObject *parent) : QObject(p
 
     // It will pop out automatically when construted, close it immediately
     m_progressDialog.close();
-
-    connect(&m_gdb, &GdbContainer::gdbExited, this, &SymbolBackend::gdbExited);
-    connect(&m_gdb, &GdbContainer::gdbCommandResponse, this, &SymbolBackend::gdbResponse);
-
-    // Wait GDB response related
-    connect(&m_waitTimer, &QTimer::timeout, this, &SymbolBackend::gdbWaitTimedOut);
-
-    setGdbExecutableLazy(gdbExecutable);
 }
 
 SymbolBackend::~SymbolBackend() {
@@ -35,8 +27,6 @@ SymbolBackend::~SymbolBackend() {
         dwarf_finish(m_dwarfDbg);
         m_dwarfDbg = nullptr;
     }
-
-    m_gdb.stopGdb();
 }
 
 QString SymbolBackend::errorString(SymbolBackend::Error error) {
@@ -61,50 +51,6 @@ QString SymbolBackend::errorString(SymbolBackend::Error error) {
             return tr("Action failed because an internal call to explainType was unsuccessful");
         default:
             return tr("Unknown error");
-    }
-}
-
-bool SymbolBackend::setGdbExecutableLazy(QString gdbPath) {
-    if (m_gdbProperlySet) {
-        return false;
-    }
-
-    if (gdbPath.isEmpty()) {
-        QMessageBox::warning(nullptr, tr("GDB executable path not set"),
-                             tr("GDB executable path is not set. Please set it in settings, "
-                                "and manually start GDB from menu after this."));
-        return false;
-    }
-
-    m_gdb.setGdbExecutablePath(gdbPath);
-
-    // See if it starts successfully
-    Error startupResult = Error::NoError;
-    connect(&m_gdb, &GdbContainer::gdbStarted, [&](bool successful) {
-        if (successful) {
-            startupResult = Error::NoError;
-        } else {
-            startupResult = Error::GdbStartupFail;
-        }
-    });
-
-    // Starting a process is instantaneous on all platforms I know of so startupResult should be ready
-    // right after startup call
-    m_gdb.startGdb();
-
-    // Disconnect gdbStarted signal - it's only used here but beware of this later
-    disconnect(&m_gdb, SIGNAL(gdbStarted));
-
-    if (startupResult != Error::NoError) {
-        QMessageBox::critical(nullptr, tr("GDB startup failed"),
-                              tr("GDB startup failed. Please set proper GDB executable path "
-                                 "and manually start GDB from menu.\n\n"
-                                 "Failed GDB executable path: %1\n")
-                                  .arg(gdbPath));
-        return false;
-    } else {
-        m_gdbProperlySet = true; // Now you should not tamper with GDB anymore
-        return true;
     }
 }
 
@@ -461,69 +407,6 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
     return Ok(ret);
 }
 
-Result<QString, SymbolBackend::Error> SymbolBackend::explainType(QString typeName) {
-    // This ability was not exposed to MI unfortunately, you must emulate console input
-    // GAAAAHHHHHHH
-
-    // C++ is known to cause issues, let's get rid of them
-    if (typeName.contains("::")) {
-        return Ok(QString("__PROBESCOPE_INVALID_TYPE_T"));
-    }
-
-    // WHY ON EARTH class KEYWORD IS PRINTED BUT NOT RECOGNIZED?
-    typeName.remove("class ");
-
-    auto result = retryableGdbCommand(QString("-interpreter-exec console \"whatis %1\"").arg(typeName));
-    if (result.isErr()) {
-        return Err(result.unwrapErr());
-    }
-
-    foreach (auto i, result.unwrap().outputs) {
-        if (i.type != gdbmi::Response::ConsoleOutput::console) {
-            continue;
-        }
-
-        auto explainedType = i.text;
-        if (!explainedType.contains("~\"type = ")) {
-            continue;
-        }
-
-        // Example: R"(~"type = struct __SPI_HandleTypeDef\n")"
-        // R"(~"type = int *\n")"
-        explainedType.remove("~\"type = "); // Should be at very beginning
-        explainedType.remove("\\n\"");      // Should be at very last
-
-        // Remove the goddam cv qualifiers for good
-        explainedType.remove("volatile ");
-        explainedType.remove("const ");
-
-        // Now: R"(struct __SPI_HandleTypeDef)"
-        // R"(int *)"
-        return Ok(explainedType);
-    }
-
-    return Err(Error::UnexpectedGdbConsoleOutput);
-}
-
-Result<uint64_t, SymbolBackend::Error> SymbolBackend::getVariableChildrenCount(QString expr) {
-    // Some C++ stuff is naughty, discard them
-    if (expr.contains("::")) {
-        return Err(Error::UnsupportedCppIdentifier);
-    }
-
-    auto createResult = retryableGdbCommand(QString("-var-create - @ \"%1\"").arg(expr));
-    if (createResult.isErr()) {
-        return Err(createResult.unwrapErr());
-    }
-
-    auto payload = createResult.unwrap().payload.toMap();
-    uint64_t ret = payload["numchild"].toUInt();
-
-    // Don't care if the delete fails
-    auto deleteResult = retryableGdbCommand(QString("-var-delete \"%1\"").arg(payload["name"].toString()));
-    return Ok(ret);
-}
-
 Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
     SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec) {
     // TODO:
@@ -540,83 +423,6 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
-
-void SymbolBackend::recoverGdbCrash() {
-    m_gdb.startGdb();
-
-    // If we have a symbol file set, tell GDB to use it
-    waitGdbResponse(m_gdb.sendCommand(QString("-file-exec-and-symbols \"%1\"").arg(m_symbolFileFullPath)));
-}
-
-Result<int, SymbolBackend::Error> SymbolBackend::warnUnstartedGdb() {
-    if (m_gdb.isGdbRunning()) {
-        return Ok(0);
-    }
-
-    QMessageBox::warning(nullptr, tr("GDB not started"), tr("GDB is not started. Please start GDB from menu."));
-    return Err(Error::GdbNotStarted);
-}
-
-Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::retryableGdbCommand(QString command, int timeout) {
-    auto warnResult = warnUnstartedGdb();
-    if (warnResult.isErr()) {
-        return Err(warnResult.unwrapErr());
-    }
-
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    forever {
-        auto token = m_gdb.sendCommand(command);
-        auto result = waitGdbResponse(token, timeout);
-
-        // The GDB command somehow never returned
-        if (result.isErr()) {
-            auto intention = QMessageBox::critical(nullptr, tr("GDB command unsuccessful"),
-                                                   tr("The underlying GDB command was unsuccessful, status: %1.\n"
-                                                      "Do you want to retry?\n\n"
-                                                      "Command: %2")
-                                                       .arg(errorString(result.unwrapErr()), command),
-                                                   QMessageBox::Yes | QMessageBox::No);
-
-            if (intention == QMessageBox::Yes) {
-                continue;
-            } else {
-                QApplication::restoreOverrideCursor();
-                return result;
-            }
-        } else {
-            // Do a simple check on the result class, and only pop a dialog when there is an error
-            auto response = result.unwrap();
-
-            if (response.message == "error") {
-                QMessageBox::critical(nullptr, tr("GDB Command Error"),
-                                      tr("GDB command error: %1\n\nCommand: %2")
-                                          .arg(response.payload.toMap().value("msg").toString(), command));
-
-                QApplication::restoreOverrideCursor();
-                return Err(Error::GdbCommandExecutionError);
-            }
-
-            QApplication::restoreOverrideCursor();
-            return result;
-        }
-    }
-}
-
-Result<gdbmi::Response, SymbolBackend::Error> SymbolBackend::waitGdbResponse(uint64_t token, int timeout) {
-    m_expectedGdbResponseToken = token;
-    m_waitTimer.start(timeout);
-    auto eventLoopRet = SymbolBackend::Error(m_eventLoop.exec());
-    // Event loop takes over, until timed out or GDB responded
-
-    // Kill the timer, it's useless now
-    m_waitTimer.stop();
-
-    if (eventLoopRet != Error::NoError) {
-        return Err(eventLoopRet);
-    } else {
-        return Ok(m_lastGdbResponse);
-    }
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 ///                     GDB GARBAGE ABOVE
@@ -1193,29 +999,3 @@ SymbolBackend::VariableIconType SymbolBackend::dwarfTagToIconType(Dwarf_Half tag
 }
 
 /***************************************** INTERNAL SLOTS *****************************************/
-
-void SymbolBackend::gdbExited(bool normalExit, int exitCode) {
-    if (normalExit) {
-        return;
-    }
-
-    // GDB crash
-    auto intention = QMessageBox::critical(nullptr, tr("GDB crashed"),
-                                           tr("GDB crashed (exit code %1). Do you want to restart it?").arg(exitCode),
-                                           QMessageBox::Yes | QMessageBox::No);
-
-    if (intention == QMessageBox::Yes) {
-        recoverGdbCrash();
-    }
-}
-
-void SymbolBackend::gdbResponse(uint64_t token, const gdbmi::Response response) {
-    if (m_expectedGdbResponseToken == token) {
-        m_lastGdbResponse = response;
-        m_eventLoop.exit(int(Error::NoError));
-    }
-}
-
-void SymbolBackend::gdbWaitTimedOut() {
-    m_eventLoop.exit(int(Error::GdbResponseTimeout));
-}

@@ -77,42 +77,7 @@ WorkspaceModel::WorkspaceModel(QObject *parent) : QObject(parent) {
         exit(1);
     }
 
-    // Initialize symbol backend
-    auto gdbPath = settings.value("Gdb/ExecutablePath").toString();
-    QFileInfo gdbExecInfo(gdbPath);
-
-    if (gdbPath.isEmpty()) {
-        // OOBE, try find a default gdb. We will supply arm-none-eabi-gdb with the package so look for that
-#ifdef Q_OS_WIN
-        constexpr const char *executableExtension = ".exe";
-#elif defined(Q_OS_UNIX)
-        constexpr const char *executableExtension = "";
-#endif
-        gdbPath = qApp->applicationDirPath() + QDir::separator() + "gdb" + QDir::separator() +
-                  QString("arm-none-eabi-gdb") + executableExtension;
-        gdbExecInfo.setFile(gdbPath);
-    }
-
-    // Already configured, validate this
-    while (!gdbExecInfo.exists() || !gdbExecInfo.isExecutable()) {
-        auto choice = QMessageBox::warning(
-            nullptr, tr("Invalid GDB executable"),
-            tr("The GDB executable found in configuration is invalid.\nYou must specify a suitable "
-               "GDB executable now.\n\nPress Cancel to exit."),
-            QMessageBox::Ok | QMessageBox::Cancel);
-
-        if (choice == QMessageBox::Cancel) {
-            exit(1);
-        }
-
-        gdbPath = QFileDialog::getOpenFileName(nullptr, tr("Choose GDB suitable for embedded device"),
-                                               ((gdbPath.isEmpty() || !gdbExecInfo.dir().exists())
-                                                    ? qApp->applicationDirPath()
-                                                    : gdbExecInfo.canonicalPath()));
-        gdbExecInfo.setFile(gdbPath);
-    }
-
-    m_symbolBackend = new SymbolBackend(gdbPath, this);
+    m_symbolBackend = new SymbolBackend(this);
 }
 
 WorkspaceModel::~WorkspaceModel() {

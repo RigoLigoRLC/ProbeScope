@@ -32,7 +32,7 @@ class SymbolBackend final : public QObject {
     Q_OBJECT
 
 public:
-    explicit SymbolBackend(QString gdbPath, QObject *parent = nullptr);
+    explicit SymbolBackend(QObject *parent = nullptr);
     ~SymbolBackend();
 
     /**
@@ -126,25 +126,6 @@ public:
     static QString errorString(Error error);
 
     /**
-     * @brief As described in the class brief, this method can only be called once when GDB was not set in constructor.
-     *        One exception is that if the GDB path you've set before cannot start GDB, you have one more chance.
-     * @note This method will start GDB automatically.
-     * @note This method is also what used in constructor.
-     *
-     * @param gdbPath GDB executable path
-     * @return true GDB executable path was set properly
-     * @return false GDB executable path is already set and is already valid
-     */
-    bool setGdbExecutableLazy(QString gdbPath);
-
-    /**
-     * @brief Get the Gdb Terminal Device object. This QIODevice is only readable and is meant to display GDB activity.
-     *
-     * @return QIODevice* GDB Terminal device
-     */
-    GdbReadonlyDevice *getGdbTerminalDevice() { return m_gdb.getGdbTerminalDevice(); }
-
-    /**
      * @brief Switch the currently selected symbol file. Usually this is called when user selects a new symbol file,
      *        along with several other methods to refresh the entire workspace state.
      *
@@ -168,24 +149,8 @@ public:
      */
     Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
 
-    /**
-     * @brief Get the children count of an expression.
-     *
-     * @param expr Parent expression
-     * @return On success: Children count. On fail: error code.
-     */
-    Result<uint64_t, Error> getVariableChildrenCount(QString expr);
-
     // TODO:
     Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec);
-
-    /**
-     * @brief Ask GDB about the real type info (traces typedefs) of a type name (with "whatis" command)
-     *
-     * @param typeName type name to be processed
-     * @return Result<QString, Error>
-     */
-    Result<QString, Error> explainType(QString typeName);
 
 private:
     /**
@@ -286,11 +251,6 @@ private:
         QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
     };
 
-    Result<int, Error> warnUnstartedGdb(); // TODO: Unimplemented, called to check if GDB not started and warn user
-    Result<gdbmi::Response, Error> retryableGdbCommand(QString command, int timeout = 5000);
-    Result<gdbmi::Response, Error> waitGdbResponse(uint64_t token, int timeout = 5000);
-    void recoverGdbCrash();
-
     bool isCuQualifiedSourceFile(DwarfCuData &cuData);
     Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
     bool ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie);
@@ -300,14 +260,9 @@ private:
                                                   QString varName);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
 
-private slots:
-    void gdbExited(bool normalExit, int exitCode);
-    void gdbResponse(uint64_t token, const gdbmi::Response response);
-    void gdbWaitTimedOut();
-
 private:
     // GDB Shenanigans
-    GdbContainer m_gdb;
+    // GdbContainer m_gdb;
     QString m_symbolFileFullPath;
     bool m_gdbProperlySet;
 
