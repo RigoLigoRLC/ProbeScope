@@ -3,7 +3,7 @@ if (DETECTED_VCPKG)
     # Use vcpkg and its target
     find_package(libdwarf CONFIG REQUIRED)
 
-    set(${libdwarf_LINK_LIBRARIES} libdwarf::dwarf)
+    set(libdwarf_LINK_LIBRARIES libdwarf::dwarf)
 else()
     # Use pkg-config
     find_package(PkgConfig REQUIRED)
