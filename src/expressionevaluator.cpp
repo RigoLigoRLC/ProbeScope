@@ -1,6 +1,9 @@
 
 #include "expressionevaluator.h"
+#include <QDebug>
+#include <QMetaEnum>
 #include <QStack>
+
 
 /*
 This is the evaluator for watch expressions.
@@ -26,6 +29,7 @@ Grammar definition in LL(1) style:
         '('; DET_EXPR; ')' |
         "sizeof"; '('; TYPE_IDENT; ')'
         INT_LIT [Integer literal] |
+        epsilon [This is a hack for cast destination type identifier. Cast is a hack on its own.]
 
     UNARY_DET_EXPR [With unary op] ->
         '-'; PRI_DET_EXPR |
@@ -75,14 +79,26 @@ Grammar definition in LL(1) style:
     POSTFIX_EXPR_B ->
         '.'; IDENT; POSTFIX_EXPR_B |
         "->"; IDENT; POSTFIX_EXPR_B |
-        '['; DET_EXPR; ']'; POSTFIX_EXPR_B |
+        '['; DET_EXPR; ']'; POSTFIX_EXPR_B | [DET_EXPR is changed so that it can be epsilon in cast target type ident.]
+        '*'; POSTFIX_EXPR_B | [This is a hack for cast target type identifier.]
+        "::"; POSTFIX_EXPR | [This is a hack for cast target type identifier]
         epsilon
 
     POSTFIX_EXPR ->
         PRI_EXPR; POSTFIX_EXPR_B
 
+    CAST_OPEXPR ->
+        '.'; IDENT; POSTFIX_EXPR_B |
+        "->"; IDENT; POSTFIX_EXPR_B |
+        '['; DET_EXPR; ']'; POSTFIX_EXPR_B |
+        (When peeks a ')':) epsilon | [This is a hack for the case neighbouring closing parenthesis]
+        POSTFIX_EXPR
+
     CAST_EXPR ->
-        '('; TYPE_IDENT; ')'; CAST_EXPR; |
+        [In cast parenths we use UNARY_EXPR and make it compatible with TYPE_IDENT we defined earlier.]
+        [This is a hack so that we don't have to check if it is really a type to determine if we are processing a cast]
+        [when doing lexical analysis.]
+        '('; UNARY_EXPR; ')'; CAST_OPEXPR |
         POSTFIX_EXPR
 
     UNARY_SYM ->
@@ -111,7 +127,8 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
 
     struct LexerContext {
         QString text, errorMsg;
-        size_t length, offset;
+        size_t length;
+        int64_t offset;
         QStack<LexerState> states;
         LexerContext(QString expr) : text(expr), length(expr.size()), offset(0) { push(EXPR); }
         void push(LexerState state) { states.push(state); }
@@ -124,10 +141,10 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
             return text.at(offset++);
         }
         QChar peek() {
-            if (offset + 1 >= length) {
+            if (offset >= length) {
                 return QChar::Null;
             }
-            return text.at(offset + 1);
+            return text.at(offset);
         }
         bool takeExpect(QChar ch, QString whatExpecteed = "") {
             if (take() != ch) {
@@ -140,9 +157,27 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
             }
             return true;
         }
+        void dumpState() {
+            QString stateStack;
+            foreach (auto i, states) {
+                stateStack += lexerStateToString(i) + ", ";
+            }
+            stateStack.chop(2);
+            QString exprPos;
+            for (auto i = 0; i < offset; i++) {
+                exprPos += ' ';
+            }
+            exprPos.chop(1);
+            exprPos.append('^');
+            qDebug() << stateStack;
+            qDebug() << text;
+            qDebug() << exprPos;
+            qDebug() << "-----------";
+        }
     } ctx(expression);
 
     forever {
+        ctx.dumpState();
         switch (ctx.pop()) {
             case EXPR: {
                 if (ctx.peek() == QChar::Null) {
@@ -196,10 +231,36 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                     ctx.push(POSTFIX_EXPR);
                     break;
                 }
-                ctx.push(CAST_EXPR);
+                ctx.push(CAST_OPEXPR);
                 ctx.push(CLOSE_PARENTH);
-                ctx.push(TYPE_IDENT);
+                ctx.push(UNARY_EXPR);
                 ctx.push(OPEN_PARENTH);
+                break;
+            }
+            case CAST_OPEXPR: {
+                switch (ctx.peek().toLatin1()) {
+                    case '.':
+                        ctx.push(POSTFIX_EXPR_B);
+                        ctx.push(IDENT);
+                        ctx.push(DOT);
+                        break;
+                    case '-':
+                        ctx.push(POSTFIX_EXPR_B);
+                        ctx.push(IDENT);
+                        ctx.push(ARROW);
+                        break;
+                    case '[':
+                        ctx.push(POSTFIX_EXPR_B);
+                        ctx.push(CLOSE_BRACKET);
+                        ctx.push(DET_EXPR);
+                        ctx.push(OPEN_BRACKET);
+                        break;
+                    case ')':
+                        break;
+                    default:
+                        ctx.push(POSTFIX_EXPR);
+                        break;
+                }
                 break;
             }
             case POSTFIX_EXPR: {
@@ -224,6 +285,14 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                         ctx.push(CLOSE_BRACKET);
                         ctx.push(DET_EXPR);
                         ctx.push(OPEN_BRACKET);
+                        break;
+                    case '*':
+                        ctx.push(POSTFIX_EXPR_B);
+                        ctx.push(ASTERISK);
+                        break;
+                    case ':':
+                        ctx.push(POSTFIX_EXPR_B);
+                        ctx.push(DBL_COLON);
                         break;
                 }
                 break;
@@ -336,8 +405,19 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                         ctx.push(OPEN_PARENTH);
                         ctx.push(SIZEOF);
                         break;
-                    default:
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
                         ctx.push(INT_LIT);
+                        break;
+                    default:
                         break;
                 }
                 break;
@@ -439,11 +519,91 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                 break;
             }
             case INT_LIT: {
+                // Read to string first, then try to resolve
+                QString intLit;
+                int length = 0;
+                bool isHex = false;
+                forever {
+                    QChar peek = ctx.peek().toLower();
+                    // Hex exemption
+                    switch (length) {
+                        case 0: {
+                            if (!peek.isNumber()) {
+                                ctx.errorMsg = QObject::tr("Integer expected at offset %1").arg(ctx.offset);
+                                goto error;
+                            }
+                            intLit.append(ctx.take());
+                            break;
+                        }
+                        case 1: {
+                            if (peek == 'x' || peek == 'X') {
+                                if (intLit[0] != '0') {
+                                    ctx.errorMsg = QObject::tr("Invalid integer literal at offset %1").arg(ctx.offset);
+                                    goto error;
+                                } else {
+                                    isHex = true;
+                                }
+                            } else if (peek.isDigit()) {
+                                intLit.append(ctx.take());
+                            } else {
+                                goto finishIntlit;
+                            }
+                            continue;
+                            break;
+                        }
+                        default: {
+                            if (isHex) {
+                                if ((peek >= '0' && peek <= '9') || (peek >= 'a' && peek <= 'f')) {
+                                    intLit.append(ctx.take());
+                                    continue;
+                                } else if (length == 2) { // An invalid char immediately follows "0x", it's an error
+                                    ctx.errorMsg = QObject::tr("Invalid integer literal at offset %1").arg(ctx.offset);
+                                } else {
+                                    goto finishIntlit;
+                                }
+                            } else {
+                                if (peek >= '0' && peek <= '9') {
+                                    intLit.append(ctx.take());
+                                    continue;
+                                } else {
+                                    goto finishIntlit;
+                                }
+                            }
+                        }
+                    }
+                    length++;
+                }
+            finishIntlit:
+                if (isHex) {
+                    intLit.remove(0, 2); // Remove 0x
+                    bool ok;
+                    ret.append({TokenType::IntegerLiteral, intLit.toUInt(&ok, 16)});
+                } else {
+                    bool ok;
+                    ret.append({TokenType::IntegerLiteral, intLit.toUInt(&ok, 10)});
+                }
                 break;
             }
         }
     }
 finishLoop:
-
+    return Ok(ret);
 error:
+    return Err(ctx.errorMsg);
+}
+
+QString ExpressionEvaluator::tokenTypeToString(TokenType tt) {
+    auto metaobject = ExpressionEvaluator::staticMetaObject;
+    auto idx = metaobject.indexOfEnumerator("TokenType");
+    QMetaEnum metaenum = metaobject.enumerator(idx);
+
+    return QString(metaenum.valueToKey(int(tt)));
+}
+
+QString ExpressionEvaluator::lexerStateToString(LexerState ls) {
+    auto metaobject = ExpressionEvaluator::staticMetaObject;
+    auto idx = metaobject.indexOfEnumerator("LexerState");
+    QMetaEnum metaenum = metaobject.enumerator(idx);
+
+    return QString(metaenum.valueToKey(int(ls)));
 }

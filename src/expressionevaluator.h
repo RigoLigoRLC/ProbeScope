@@ -7,8 +7,10 @@
 #include <result.h>
 
 
-class ExpressionEvaluator {
+class ExpressionEvaluator : public QObject {
+    Q_OBJECT
 public:
+    ExpressionEvaluator(QObject *parent = nullptr) : QObject(parent) {}
     enum class TokenType {
         // Special
         EndOfFile = 0,
@@ -35,6 +37,7 @@ public:
         Arrow,       // ->
         DoubleColon, // ::
     };
+    Q_ENUM(TokenType)
 
     enum LexerState {
         EXPR,
@@ -43,6 +46,7 @@ public:
         UNARY_EXPR,
         UNARY_SYM,
         CAST_EXPR,
+        CAST_OPEXPR,
         POSTFIX_EXPR,
         POSTFIX_EXPR_B,
         PRI_EXPR,
@@ -79,10 +83,16 @@ public:
         INT_LIT,
 
     };
+    Q_ENUM(LexerState)
 
     struct Token {
         TokenType type;
         QVariant embedData;
     };
     static Result<QList<Token>, QString> parseToTokens(QString expression);
+
+    static QString tokenTypeToString(TokenType tt);
+
+private:
+    static QString lexerStateToString(LexerState ls);
 };
