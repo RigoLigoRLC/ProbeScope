@@ -1,13 +1,14 @@
 
 #include "symbolpanel.h"
+#include "expressionevaluator.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
 #include <QDebug>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QTreeWidget>
-#include <qglobal.h>
-#include <qmessagebox.h>
-#include <qtreewidget.h>
+
+
 
 SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     ui = new Ui::SymbolPanel;
@@ -23,6 +24,7 @@ SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
 
     connect(ui->treeSymbolTree, &QTreeWidget::itemExpanded, this, &SymbolPanel::sltItemExpanded);
     connect(ui->btnAddWatchEntry, &QPushButton::clicked, this, &SymbolPanel::sltAddWatchEntryClicked);
+    connect(ui->btnEvalExpr, &QPushButton::clicked, this, &SymbolPanel::sltTestEvalExprClicked);
 }
 
 SymbolPanel::~SymbolPanel() {
@@ -149,6 +151,32 @@ void SymbolPanel::sltAddWatchEntryClicked() {
 
 
     QMessageBox::information(this, "Expression generation", expr);
+    ExpressionEvaluator evalr;
+    auto parseResult = evalr.parseToTokens(expr);
+    qInfo() << expr << "Evaluation:";
+    if (parseResult.isErr()) {
+        qCritical() << parseResult.unwrapErr();
+    } else {
+        auto tokens = parseResult.unwrap();
+        foreach (auto &i, tokens) {
+            qInfo() << ExpressionEvaluator::tokenTypeToString(i.type) << i.embedData;
+        }
+    }
+}
+
+void SymbolPanel::sltTestEvalExprClicked() {
+    auto expr = QInputDialog::getText(this, "Expr", "Put expr");
+    auto parseResult = ExpressionEvaluator::parseToTokens(expr);
+    if (parseResult.isErr()) {
+        QMessageBox::critical(this, "Error parsing expression", expr + '\n' + parseResult.unwrapErr());
+    } else {
+        QString result;
+        auto tokens = parseResult.unwrap();
+        foreach (auto &i, tokens) {
+            result += QString("%1: [%2]\n").arg(ExpressionEvaluator::tokenTypeToString(i.type), i.embedData.toString());
+        }
+        QMessageBox::information(this, "Parse result", expr + '\n' + result);
+    }
 }
 
 void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {

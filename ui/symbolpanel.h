@@ -69,6 +69,7 @@ private:
 private slots:
     void sltItemExpanded(QTreeWidgetItem *item);
     void sltAddWatchEntryClicked();
+    void sltTestEvalExprClicked();
 
 private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);

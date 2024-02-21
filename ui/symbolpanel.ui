@@ -169,6 +169,13 @@
      </property>
     </widget>
    </item>
+   <item>
+    <widget class="QPushButton" name="btnEvalExpr">
+     <property name="text">
+      <string>test_EvalExpr</string>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>
