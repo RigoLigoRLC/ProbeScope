@@ -177,7 +177,7 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
     } ctx(expression);
 
     forever {
-        ctx.dumpState();
+        // ctx.dumpState();
         switch (ctx.pop()) {
             case EXPR: {
                 if (ctx.peek() == QChar::Null) {
