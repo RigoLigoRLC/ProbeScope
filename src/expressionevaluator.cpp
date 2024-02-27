@@ -92,6 +92,7 @@ Grammar definition in LL(1) style:
         "->"; IDENT; POSTFIX_EXPR_B |
         '['; DET_EXPR; ']'; POSTFIX_EXPR_B |
         (When peeks a ')':) epsilon | [This is a hack for the case neighbouring closing parenthesis]
+        (When peeks a '(':) CAST_EXPR | [This is a hack for the case neighbouring opening parenthesis]
         POSTFIX_EXPR
 
     CAST_EXPR ->
@@ -177,7 +178,7 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
     } ctx(expression);
 
     forever {
-        // ctx.dumpState();
+        ctx.dumpState();
         switch (ctx.pop()) {
             case EXPR: {
                 if (ctx.peek() == QChar::Null) {
@@ -254,6 +255,9 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                         ctx.push(CLOSE_BRACKET);
                         ctx.push(DET_EXPR);
                         ctx.push(OPEN_BRACKET);
+                        break;
+                    case '(':
+                        ctx.push(CAST_EXPR);
                         break;
                     case ')':
                         break;
@@ -502,6 +506,9 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                 // Axioms
             case IDENT: {
                 auto peek = ctx.peek();
+                if (peek.isNull()) {
+                    break;
+                }
                 QString ident;
                 // First character: /[A-Za-z_]/
                 if (peek.isNumber() && !peek.isLetter() && peek != '_') {
@@ -515,7 +522,9 @@ Result<QList<ExpressionEvaluator::Token>, QString> ExpressionEvaluator::parseToT
                     ident.append(ctx.take());
                     peek = ctx.peek();
                 }
-                ret.append({TokenType::Identifier, ident});
+                if (!ident.isEmpty()) {
+                    ret.append({TokenType::Identifier, ident});
+                }
                 break;
             }
             case INT_LIT: {
