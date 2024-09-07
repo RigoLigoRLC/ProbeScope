@@ -38,6 +38,10 @@ add_subdirectory(lib/singleapplication)
 # Import libdwarf
 include(cmake/ImportLibdwarf.cmake)
 
+# Import tree-sitter
+find_package(unofficial-tree-sitter CONFIG REQUIRED)
+add_subdirectory(lib/WatchExprParser)
+
 # Add include directories
 include_directories(src ui)
 
@@ -61,9 +65,11 @@ qm_configure_target(probescope
     LINKS_PRIVATE
         psprobe
         qtermwidget
-        qt5advanceddocking
+        ads::qt5advanceddocking
         SingleApplication::SingleApplication
         ${libdwarf_LINK_LIBRARIES}
+        unofficial::tree-sitter::tree-sitter
+        WatchExprParser
 
     INCLUDE_PRIVATE
         inc

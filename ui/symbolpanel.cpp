@@ -166,15 +166,16 @@ void SymbolPanel::sltAddWatchEntryClicked() {
 
 void SymbolPanel::sltTestEvalExprClicked() {
     auto expr = QInputDialog::getText(this, "Expr", "Put expr");
-    auto parseResult = ExpressionEvaluator::parseToTokens(expr);
+    auto parseResult = ExpressionEvaluator::treeSitter(expr);
     if (parseResult.isErr()) {
         QMessageBox::critical(this, "Error parsing expression", expr + '\n' + parseResult.unwrapErr());
     } else {
-        QString result;
-        auto tokens = parseResult.unwrap();
-        foreach (auto &i, tokens) {
-            result += QString("%1: [%2]\n").arg(ExpressionEvaluator::tokenTypeToString(i.type), i.embedData.toString());
-        }
+        // QString result;
+        // auto tokens = parseResult.unwrap();
+        // foreach (auto &i, tokens) {
+        //     result += QString("%1: [%2]\n").arg(ExpressionEvaluator::tokenTypeToString(i.type), i.embedData.toString());
+        // }
+        QString result = parseResult.unwrap();
         QMessageBox::information(this, "Parse result", expr + '\n' + result);
     }
 }

@@ -3,7 +3,58 @@
 #include <QDebug>
 #include <QMetaEnum>
 #include <QStack>
+#include <tree_sitter/api.h>
 
+extern "C" const TSLanguage* tree_sitter_ProbeScope_Watch_Expr(void);
+
+const TSLanguage* ExpressionEvaluator::m_tsLang = nullptr;
+uint32_t ExpressionEvaluator::field_type_ident = 0;
+uint32_t ExpressionEvaluator::field_expr = 0;
+
+static TSNode squeezeTree(TSNode node) {
+    TSNode ret = node;
+
+    while (ts_node_named_child_count(ret) == 1) {
+        ret = ts_node_child(ret, 0);
+    }
+
+    return ret;
+}
+
+ExpressionEvaluator::ExpressionEvaluator(QObject* parent) : QObject(parent) {
+    initializeTreeSitter();
+}
+
+ExpressionEvaluator::~ExpressionEvaluator() {
+    
+}
+
+void ExpressionEvaluator::initializeTreeSitter() {
+    if (m_tsLang != nullptr) return;
+
+    m_tsLang = tree_sitter_ProbeScope_Watch_Expr();
+    // Field IDs
+    field_type_ident = ts_language_field_id_for_name(m_tsLang, "type_ident", 10);
+}
+
+Result<QString, QString> ExpressionEvaluator::treeSitter(QString expression) {
+    initializeTreeSitter();
+
+    auto parser = ts_parser_new();
+    auto utf8 = expression.toUtf8();
+    ts_parser_set_language(parser, m_tsLang);
+    auto tree = ts_parser_parse_string(parser, nullptr, utf8.data(), utf8.size());
+    auto root = ts_tree_root_node(tree);
+    auto node = squeezeTree(root);
+    auto sexpr = ts_node_string(node);
+
+    QString ret(sexpr);
+    free(sexpr);
+    ts_tree_delete(tree);
+    ts_parser_delete(parser);
+
+    return Ok(ret);
+}
 
 /*
 This is the evaluator for watch expressions.

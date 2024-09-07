@@ -6,11 +6,13 @@
 #include <QVariant>
 #include <result.h>
 
+struct TSLanguage;
 
 class ExpressionEvaluator : public QObject {
     Q_OBJECT
 public:
-    ExpressionEvaluator(QObject *parent = nullptr) : QObject(parent) {}
+    ExpressionEvaluator(QObject *parent = nullptr);
+    ~ExpressionEvaluator();
     enum class TokenType {
         // Special
         EndOfFile = 0,
@@ -93,6 +95,13 @@ public:
 
     static QString tokenTypeToString(TokenType tt);
 
+    static Result<QString, QString> treeSitter(QString expression);
+
 private:
     static QString lexerStateToString(LexerState ls);
+
+    static void initializeTreeSitter();
+    static const TSLanguage* m_tsLang;
+    static uint32_t field_type_ident,
+                    field_expr;
 };
