@@ -5,9 +5,9 @@
 #include <QStack>
 #include <tree_sitter/api.h>
 
-extern "C" const TSLanguage* tree_sitter_ProbeScope_Watch_Expr(void);
+extern "C" const TSLanguage *tree_sitter_ProbeScope_Watch_Expr(void);
 
-const TSLanguage* ExpressionEvaluator::m_tsLang = nullptr;
+const TSLanguage *ExpressionEvaluator::m_tsLang = nullptr;
 uint32_t ExpressionEvaluator::field_type_ident = 0;
 uint32_t ExpressionEvaluator::field_expr = 0;
 
@@ -21,16 +21,15 @@ static TSNode squeezeTree(TSNode node) {
     return ret;
 }
 
-ExpressionEvaluator::ExpressionEvaluator(QObject* parent) : QObject(parent) {
+ExpressionEvaluator::ExpressionEvaluator(QObject *parent) : QObject(parent) {
     initializeTreeSitter();
 }
 
-ExpressionEvaluator::~ExpressionEvaluator() {
-    
-}
+ExpressionEvaluator::~ExpressionEvaluator() {}
 
 void ExpressionEvaluator::initializeTreeSitter() {
-    if (m_tsLang != nullptr) return;
+    if (m_tsLang != nullptr)
+        return;
 
     m_tsLang = tree_sitter_ProbeScope_Watch_Expr();
     // Field IDs

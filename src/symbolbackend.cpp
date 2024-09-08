@@ -8,8 +8,6 @@
 #include <dwarf.h>
 #include <libdwarf.h>
 
-
-
 SymbolBackend::SymbolBackend(QObject *parent) : QObject(parent) {
     m_symbolFileFullPath = "";
     m_gdbProperlySet = false;
@@ -59,13 +57,8 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
 
     // Prepare a progress dialog
     m_progressDialog.setLabelText(tr("Loading symbol file..."));
+    m_progressDialog.setWindowModality(Qt::ApplicationModal);
     m_progressDialog.show();
-
-    // // If we have a symbol file set, tell GDB to use it
-    // auto result = retryableGdbCommand(QString("-file-exec-and-symbols \"%1\"").arg(m_symbolFileFullPath));
-    // if (result.isErr()) {
-    //     return Err(result.unwrapErr());
-    // }
 
     Dwarf_Error dwErr;
     int dwRet;
@@ -78,6 +71,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
             dwarf_dealloc_die(it->CuDie);
         }
         m_cus.clear();
+        m_cuOffsetMap.clear();
         m_qualifiedSourceFiles.clear();
 
         // Discard previous file
@@ -150,11 +144,13 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
 
         cuData.CuDie = cuDie;       // CU DIE
         cuData.Name = srcFile.path; // File name
-        dwRet = dwarf_die_CU_offset(cuDie, &cuData.CuDieOff, NULL);
-        if (dwRet != DW_DLV_OK) {
+        // dwRet = dwarf_dieoffset(cuDie, &cuData.CuDieOff, NULL); // CU Offset
+        auto cuOffsetResult = DwarfCuDataOffsetFromDie(cuDie, NULL);
+        if (cuOffsetResult.isErr()) {
             dwarf_dealloc_die(cuDie);
             continue;
         }
+        cuData.CuDieOff = cuOffsetResult.unwrap();
         // Comp dir
         auto compDirAttr = attrList(DW_AT_comp_dir);
         if (compDirAttr) {
@@ -260,6 +256,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
 
         // Add into internal CU cache
         m_cus.append(cuData);
+        m_cuOffsetMap[cuData.CuDieOff] = m_cus.size() - 1;
 
         // Add as a valid CU for returning
         if (isCuQualifiedSourceFile(cuData)) {
@@ -310,13 +307,18 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         if (dwarf_whatform(addrAttr, &addrAttrForm, NULL) != DW_DLV_OK) {
             return Err(Error::LibdwarfApiFailure);
         }
-        // FIXME: Arm compiler uses block form instead of exprloc for variable addresses
         if (dwarf_formexprloc(addrAttr, &exprLen, &exprPtr, NULL) != DW_DLV_OK) {
             Dwarf_Block *addrBlock;
             if (dwarf_formblock(addrAttr, &addrBlock, NULL) != DW_DLV_OK) {
                 return Err(Error::LibdwarfApiFailure);
             }
-            // TODO: How to use?????
+            exprPtr = 0;
+            // HACK: Arm compiler uses expressions in block form instead of exprloc for variable addresses
+            if (reinterpret_cast<uint8_t *>(addrBlock->bl_data)[0] == DW_OP_addr) {
+                memcpy(&exprPtr, reinterpret_cast<uint8_t *>(addrBlock->bl_data) + 1, addrBlock->bl_len - 1);
+            } else {
+                return Err(Error::LibdwarfApiFailure);
+            }
         }
 
         // If it is a reference, go to the destination
@@ -352,24 +354,33 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         }
         node.displayName = QString(dispName);
 
-        // Get a DIE offset reference to type specifier. DW_AT_type is always a ref to other DIEs in CU
+        // Get a DIE offset reference to type specifier.
+        // DW_AT_type can refer to a DIE in current CU (DW_FORM_ref_n) or in other CUs(DW_FORM_ref_addr)
+        // So when we're looking for type info we need to search for other CUs when current CU doesn't have it
         Dwarf_Off typeSpec;
         Dwarf_Bool isInfo;
         Dwarf_Attribute typeSpecAttr;
         if (!(typeSpecAttr = attrs(DW_AT_type))) {
             return Err(Error::LibdwarfApiFailure);
         }
-        if (dwarf_formref(typeSpecAttr, &typeSpec, &isInfo, NULL) != DW_DLV_OK || !isInfo || !cu.hasDie(typeSpec)) {
+#if 0
+        if (DwarfFormRefEx(typeSpecAttr, &typeSpec, &isInfo, NULL) != DW_DLV_OK || !isInfo || !cu.hasDie(typeSpec)) {
             Dwarf_Off off;
             dwarf_dieoffset(it.value(), &off, NULL);
             qDebug() << "Get typespec: CU has no DIE" << QString::number(typeSpec, 16)
                      << ", var DIE:" << QString::number(trueOffset ? trueOffset : off, 16);
             return Err(Error::LibdwarfApiFailure);
         }
-        node.typeSpec = typeSpec;
+#endif
+        auto derefResult = anyDeref(typeSpecAttr, &typeSpec, &isInfo, NULL);
+        if (derefResult.isErr()) {
+            return Err(Error::LibdwarfApiFailure);
+        }
+        // node.typeSpec = typeSpec;
+        node.typeSpec = derefResult.unwrap();
 
         // TODO: displayable type name
-        auto typeDetailsResult = getTypeDetails(cuIndex, typeSpec);
+        auto typeDetailsResult = getTypeDetails(derefResult.unwrap());
         if (typeDetailsResult.isErr()) {
             node.displayTypeName = tr("<Error Type>");
             node.expandable = false;
@@ -408,12 +419,12 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
 }
 
 Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
-    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec) {
+    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, TypeDieRef typeSpec) {
     // TODO:
     QList<VariableNode> ret;
 
     TypeResolutionContext ctx;
-    auto result = tryExpandType(cuIndex, typeSpec, ctx, varName);
+    auto result = tryExpandType(typeSpec.cuIndex, typeSpec.dieOffset, ctx, varName);
     if (result.isErr()) {
         return Err(result.unwrapErr());
     }
@@ -459,6 +470,35 @@ bool SymbolBackend::isCuQualifiedSourceFile(DwarfCuData &cu) {
     return false;
 }
 
+Result<QPair<int, Dwarf_Off>, int> SymbolBackend::anyDeref(Dwarf_Attribute dw_attr, Dwarf_Off *dw_out_off,
+                                                           Dwarf_Bool *dw_is_info, Dwarf_Error *dw_err) {
+    //
+    Dwarf_Half form;
+    Dwarf_Off offset;
+    int result;
+
+    result = dwarf_whatform(dw_attr, &form, dw_err);
+    if (result != DW_DLV_OK) {
+        return Err(result);
+    }
+
+    result = dwarf_global_formref_b(dw_attr, &offset, dw_is_info, dw_err);
+    if (result != DW_DLV_OK) {
+        return Err(result);
+    }
+
+    auto cuIdxIt = m_cuOffsetMap.lowerBound(offset);
+    if (cuIdxIt.key() > offset) {
+        --cuIdxIt;
+        Q_ASSERT(cuIdxIt.key() < offset);
+        Q_ASSERT(m_cus.size() > cuIdxIt.value());
+        auto &targetCu = m_cus[cuIdxIt.value()];
+        Q_ASSERT(targetCu.hasDie(offset - targetCu.CuDieOff));
+    }
+
+    return Ok(QPair{cuIdxIt.value(), offset - m_cus[cuIdxIt.value()].CuDieOff});
+}
+
 bool SymbolBackend::ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie) {
     auto &cu = m_cus[cuIndex];
     if (cu.CachedTypes.contains(typeDie)) {
@@ -485,6 +525,11 @@ Result<SymbolBackend::DwarfCuData::TypeDieDetails, SymbolBackend::Error>
     } else {
         return Err(Error::LibdwarfApiFailure);
     }
+}
+
+Result<SymbolBackend::DwarfCuData::TypeDieDetails, SymbolBackend::Error>
+    SymbolBackend::getTypeDetails(SymbolBackend::TypeDieRef typeDie) {
+    return getTypeDetails(typeDie.cuIndex, typeDie.dieOffset);
 }
 
 bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx) {
@@ -527,10 +572,14 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
             Dwarf_Bool isInfo;
             DwarfAttrList attrs(m_dwarfDbg, die);
             Q_ASSERT(attrs.has(DW_AT_type));
-            if (!(typeAttr = attrs(DW_AT_type)) || dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
+            if (!(typeAttr = attrs(DW_AT_type))) {
                 return false;
             }
-            ctx.arrayElementTypeOff = typeDieOff;
+            auto typeResult = anyDeref(typeAttr, &typeDieOff, &isInfo, NULL);
+            if (typeResult.isErr()) {
+                return false;
+            }
+            ctx.arrayElementTypeOff = typeResult.unwrap();
             auto result = resolveTypeDetails(cuIndex, firstRangeOffset, ctx);
             if (!result) {
                 return false;
@@ -566,8 +615,9 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
                     qDebug() << "Cannot get upperbound form";
                     return false;
                 }
-                if (uboundForm != DW_FORM_sdata && uboundForm != DW_FORM_data1 && uboundForm != DW_FORM_data2 &&
-                    uboundForm != DW_FORM_data4 && uboundForm != DW_FORM_data8 && uboundForm != DW_FORM_data16) {
+                if (uboundForm != DW_FORM_sdata && uboundForm != DW_FORM_udata && uboundForm != DW_FORM_data1 &&
+                    uboundForm != DW_FORM_data2 && uboundForm != DW_FORM_data4 && uboundForm != DW_FORM_data8 &&
+                    uboundForm != DW_FORM_data16) {
                     qDebug() << "Invalid upperbound form";
                     return false;
                 }
@@ -604,7 +654,7 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
                 details.expandable = hasUpperBound; // When no clear upper bound specified, do not make expandable
             } else {
                 // No deeper dimension available, take base type
-                auto result = getTypeDetails(cuIndex, ctx.arrayElementTypeOff);
+                auto result = getTypeDetails(ctx.arrayElementTypeOff);
                 if (result.isErr()) {
                     qDebug() << "getTypeDetails of array base type failed";
                     return false;
@@ -744,13 +794,15 @@ bool SymbolBackend::resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, Type
             if (!(baseTypeAttr = attrs(DW_AT_type))) {
                 return false;
             }
-            if (dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
+            auto typeResult = anyDeref(baseTypeAttr, &baseTypeOff, &isInfo, NULL);
+            if (typeResult.isErr()) {
                 return false;
             }
-            auto ret = resolveTypeDetails(cuIndex, baseTypeOff, ctx);
+            auto typeRef = typeResult.unwrap();
+            auto ret = resolveTypeDetails(typeRef.first, typeRef.second, ctx);
             if (ret) {
                 // Copy base type to current type DIE
-                details = cu.CachedTypes[baseTypeOff];
+                details = m_cus[typeRef.first].CachedTypes[typeRef.second];
             }
             break;
         }
@@ -797,10 +849,14 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
             Dwarf_Bool isInfo;
             DwarfAttrList attrs(m_dwarfDbg, die);
             Q_ASSERT(attrs.has(DW_AT_type));
-            if (!(typeAttr = attrs(DW_AT_type)) || dwarf_formref(typeAttr, &typeDieOff, &isInfo, NULL) != DW_DLV_OK) {
+            if (!(typeAttr = attrs(DW_AT_type))) {
                 return Err(Error::LibdwarfApiFailure);
             }
-            ctx.arrayElementTypeOff = typeDieOff;
+            auto typeResult = anyDeref(typeAttr, &typeDieOff, &isInfo, NULL);
+            if (typeResult.isErr()) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            ctx.arrayElementTypeOff = typeResult.unwrap();
             return tryExpandType(cuIndex, childDieOffset, ctx, varName);
             break;
         }
@@ -835,7 +891,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     node.displayTypeName = subtypeDetails.unwrap().displayName.arg("");
                     node.expandable = subtypeDetails.unwrap().expandable;
                     node.iconType = VariableIconType::Array;
-                    node.typeSpec = deeperDimOff;
+                    node.typeSpec = TypeDieRef(cuIndex, deeperDimOff);
                     // node.address = // TODO: Addressing scheme??
                     ret.subNodeDetails.append(node);
                 }
@@ -850,7 +906,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 //     cu.CachedTypes[typeDie].arraySubrangeElementTypeDie});
                 // Build return data
                 auto subTypeDieOff = cu.CachedTypes[typeDie].arraySubrangeElementTypeDie;
-                auto subtypeDetailsResult = getTypeDetails(cuIndex, subTypeDieOff);
+                auto subtypeDetailsResult = getTypeDetails(subTypeDieOff.cuIndex, subTypeDieOff.dieOffset);
                 if (subtypeDetailsResult.isErr()) {
                     return Err(subtypeDetailsResult.unwrapErr());
                 }
@@ -880,7 +936,11 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                 dwarf_formref(baseTypeAttr, &baseTypeOff, &isInfo, NULL) != DW_DLV_OK) {
                 return Err(Error::LibdwarfApiFailure);
             }
-            auto result = getTypeDetails(cuIndex, baseTypeOff);
+            auto typeResult = anyDeref(baseTypeAttr, &baseTypeOff, &isInfo, NULL);
+            if (typeResult.isErr()) {
+                return Err(Error::LibdwarfApiFailure);
+            }
+            auto result = getTypeDetails(typeResult.unwrap());
             if (result.isErr()) {
                 return Err(result.unwrapErr());
             }
@@ -890,7 +950,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
             node.displayTypeName = result.unwrap().displayName;
             node.expandable = result.unwrap().expandable;
             node.iconType = dwarfTagToIconType(result.unwrap().dwarfTag);
-            node.typeSpec = baseTypeOff;
+            node.typeSpec = typeResult.unwrap();
             ret.subNodeDetails.append(node);
             return Ok(ret);
             // FIXME: consider logic for expanding basic types / structs/unions
@@ -922,12 +982,15 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     }
                     char *nameStr;
                     Dwarf_Bool isInfo;
-                    Dwarf_Off typeOff;
-                    if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK ||
-                        dwarf_formref(typeAddr, &typeOff, &isInfo, NULL) != DW_DLV_OK) {
+                    if (dwarf_formstring(nameAttr, &nameStr, NULL) != DW_DLV_OK) {
                         return Err(Error::LibdwarfApiFailure);
                     }
-                    auto result = getTypeDetails(cuIndex, typeOff);
+                    Dwarf_Off typeGlobalOff;
+                    auto typeResult = anyDeref(typeAddr, &typeGlobalOff, &isInfo, NULL);
+                    if (typeResult.isErr()) {
+                        return Err(Error::LibdwarfApiFailure);
+                    }
+                    auto result = getTypeDetails(typeResult.unwrap());
                     if (result.isErr()) {
                         return Err(result.unwrapErr());
                     }
@@ -937,7 +1000,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
                     node.displayName = QString(nameStr);
                     node.displayTypeName = resultX.displayName;
                     node.iconType = dwarfTagToIconType(resultX.dwarfTag);
-                    node.typeSpec = typeOff;
+                    node.typeSpec = typeResult.unwrap();
                     node.expandable = resultX.expandable;
                     ret.subNodeDetails.append(node);
                 }
@@ -996,6 +1059,38 @@ SymbolBackend::VariableIconType SymbolBackend::dwarfTagToIconType(Dwarf_Half tag
             return VariableIconType::Unknown;
             break;
     }
+}
+
+/***************************************** DWARF HELPERS *****************************************/
+
+int SymbolBackend::DwarfFormRefEx(Dwarf_Attribute dw_attr, Dwarf_Off *dw_off, Dwarf_Bool *dw_is_info,
+                                  Dwarf_Error *dw_err) {
+    Dwarf_Half form;
+    int result;
+
+    result = dwarf_whatform(dw_attr, &form, dw_err);
+    if (result != DW_DLV_OK) {
+        return result;
+    }
+
+    if (form == DW_FORM_ref_addr) {
+        result = dwarf_global_formref_b(dw_attr, dw_off, dw_is_info, dw_err);
+        return result;
+    }
+
+    result = dwarf_formref(dw_attr, dw_off, dw_is_info, dw_err);
+    return result;
+}
+
+Result<Dwarf_Off, int> SymbolBackend::DwarfCuDataOffsetFromDie(Dwarf_Die die, Dwarf_Error *error) {
+    Dwarf_Off cu_offset, cu_length;
+
+    int result = dwarf_die_CU_offset_range(die, &cu_offset, &cu_length, error);
+    if (result != DW_DLV_OK) {
+        return Err(result);
+    }
+
+    return Ok(cu_offset);
 }
 
 /***************************************** INTERNAL SLOTS *****************************************/

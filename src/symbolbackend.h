@@ -90,6 +90,20 @@ public:
 
     struct TypeSpec {};
 
+    /**
+     * @brief Because a type DIE ref can cross CU boundary (this is disgusting) we must include the target CU index
+     */
+    struct TypeDieRef {
+        TypeDieRef() = default;
+        TypeDieRef(int cu, Dwarf_Off off) : cuIndex(cu), dieOffset(off) {}
+        TypeDieRef(QPair<int, Dwarf_Off> pair) : cuIndex(pair.first), dieOffset(pair.second) {}
+        TypeDieRef(const TypeDieRef &) = default;
+        TypeDieRef &operator=(const TypeDieRef &) = default;
+        operator QVariant() { return QVariant::fromValue(*this); }
+        int cuIndex;
+        Dwarf_Off dieOffset;
+    };
+
     struct VariableInfo {
         QString name;
         QString typeName;
@@ -109,7 +123,7 @@ public:
         VariableIconType iconType;
         bool expandable;
         void *address;
-        Dwarf_Off typeSpec;
+        TypeDieRef typeSpec;
     };
 
     struct ExpandNodeResult {
@@ -150,7 +164,7 @@ public:
     Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
 
     // TODO:
-    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, Dwarf_Off typeSpec);
+    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, TypeDieRef typeSpec);
 
 private:
     /**
@@ -225,9 +239,9 @@ private:
     };
 
     struct TypeResolutionContext {
-        TypeResolutionContext() : typedefTypeName(QString()), arrayElementTypeOff(0) {}
-        QString typedefTypeName;       ///< Outmost layer typedef defined type name
-        Dwarf_Off arrayElementTypeOff; ///< Array element type defined in DW_TAG_array_type
+        TypeResolutionContext() : typedefTypeName(QString()), arrayElementTypeOff(0, 0) {}
+        QString typedefTypeName;        ///< Outmost layer typedef defined type name
+        TypeDieRef arrayElementTypeOff; ///< Array element type defined in DW_TAG_array_type
     };
 
     struct DwarfCuData {
@@ -245,20 +259,32 @@ private:
         struct TypeDieDetails {
             QString displayName;
             Dwarf_Half dwarfTag;
-            Dwarf_Off arraySubrangeElementTypeDie; ///< Exclusively for subranges
+            TypeDieRef arraySubrangeElementTypeDie; ///< Exclusively for subranges
             bool expandable;
         };
         QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
     };
 
     bool isCuQualifiedSourceFile(DwarfCuData &cuData);
+    /**
+     * @brief Deref of DW_FORM_ref*, either CU local or global. Args are same as dwarf_formref
+     * @return On success: a pair of <CuIndex, CuLocalOffset>. On failure: Last libdwarf API call result
+     */
+    Result<QPair<int, Dwarf_Off>, int> anyDeref(Dwarf_Attribute dw_attr, Dwarf_Off *dw_out_off, Dwarf_Bool *dw_is_info,
+                                                Dwarf_Error *dw_err);
     Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
+    Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(TypeDieRef typeDie);
     bool ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie);
     bool resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx);
 
     Result<ExpandNodeResult, Error> tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx,
                                                   QString varName);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
+
+    // Custom extended DWARF manipulators
+    int DwarfFormRefEx(Dwarf_Attribute dw_attr, Dwarf_Off *dw_out_off, Dwarf_Bool *dw_is_info, Dwarf_Error *dw_err);
+    Result<Dwarf_Off, int> DwarfCuDataOffsetFromDie(Dwarf_Die die,
+                                                    Dwarf_Error *); ///< Get CU data offset for the owner CU of this DIE
 
 private:
     // GDB Shenanigans
@@ -276,5 +302,8 @@ private:
     // libdwarf to the rescue
     Dwarf_Debug m_dwarfDbg;
     QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
+    QMap<Dwarf_Off, int> m_cuOffsetMap;       ///< (CuBaseOffset -> CuVectorIndex) mapping
     QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
 };
+
+Q_DECLARE_METATYPE(SymbolBackend::TypeDieRef);

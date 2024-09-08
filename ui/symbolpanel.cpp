@@ -173,7 +173,8 @@ void SymbolPanel::sltTestEvalExprClicked() {
         // QString result;
         // auto tokens = parseResult.unwrap();
         // foreach (auto &i, tokens) {
-        //     result += QString("%1: [%2]\n").arg(ExpressionEvaluator::tokenTypeToString(i.type), i.embedData.toString());
+        //     result += QString("%1: [%2]\n").arg(ExpressionEvaluator::tokenTypeToString(i.type),
+        //     i.embedData.toString());
         // }
         QString result = parseResult.unwrap();
         QMessageBox::information(this, "Parse result", expr + '\n' + result);
@@ -206,7 +207,7 @@ void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
 void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
     auto varName = item->data(0, VariableNameRole).toString();
     auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
-    auto typespec = item->data(0, TypespecRole).toULongLong();
+    auto typespec = item->data(0, TypespecRole).value<SymbolBackend::TypeDieRef>();
 
     auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typespec);
     if (result.isErr()) {

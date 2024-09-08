@@ -101,7 +101,6 @@ private:
     static QString lexerStateToString(LexerState ls);
 
     static void initializeTreeSitter();
-    static const TSLanguage* m_tsLang;
-    static uint32_t field_type_ident,
-                    field_expr;
+    static const TSLanguage *m_tsLang;
+    static uint32_t field_type_ident, field_expr;
 };
