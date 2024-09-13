@@ -78,12 +78,8 @@ void SymbolPanel::markNeedsPopulate(QTreeWidgetItem *item) {
 void SymbolPanel::sltItemExpanded(QTreeWidgetItem *item) {
     if (item->data(0, NeedsPopulateChildrenRole).toBool()) {
         switch (NodeKind(item->data(0, NodeKindRole).toUInt())) {
-            case NodeKind::CompileUnit:
-                dynamicPopulateChildForCU(item);
-                break;
-            case NodeKind::VariableEntries:
-                dynamicPopulateChildForVarnode(item);
-                break;
+            case NodeKind::CompileUnit: dynamicPopulateChildForCU(item); break;
+            case NodeKind::VariableEntries: dynamicPopulateChildForVarnode(item); break;
         }
     }
 }
@@ -118,9 +114,7 @@ void SymbolPanel::sltAddWatchEntryClicked() {
             switch (SymbolBackend::VariableIconType(parent->data(GeneralCol, IconTypeRole).toUInt())) {
                 case SymbolBackend::VariableIconType::Integer:
                 case SymbolBackend::VariableIconType::FloatingPoint:
-                case SymbolBackend::VariableIconType::Boolean:
-                    Q_ASSERT(false);
-                    break;
+                case SymbolBackend::VariableIconType::Boolean: Q_ASSERT(false); break;
                 case SymbolBackend::VariableIconType::Structure:
                     // Parent = struct/union/class, Current = member
                     expr = QString("%1.%2").arg(expr).arg(current->data(GeneralCol, VariableNameRole).toString());
@@ -142,9 +136,7 @@ void SymbolPanel::sltAddWatchEntryClicked() {
                     // Parent = array/subrange, Current = index'd
                     expr = QString("%1[%2]").arg(expr).arg(current->text(SortCol));
                     break;
-                case SymbolBackend::VariableIconType::Unknown:
-                    Q_ASSERT(false);
-                    break;
+                case SymbolBackend::VariableIconType::Unknown: Q_ASSERT(false); break;
             }
         }
     }
@@ -208,8 +200,9 @@ void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
     auto varName = item->data(0, VariableNameRole).toString();
     auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
     auto typespec = item->data(0, TypespecRole).value<SymbolBackend::DieRef>();
+    auto typeObj = item->data(0, TypeObjectRole).value<ITypePtrBox>().p;
 
-    auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typespec);
+    auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typeObj);
     if (result.isErr()) {
         // TODO:
         qCritical() << "Failed to expand Varnode" << varName;
@@ -243,6 +236,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     subitem->setData(0, VariableNameRole, var.displayName);
     subitem->setData(0, CompileUnitIndexRole, cuIndex);
     subitem->setData(0, TypespecRole, var.typeSpec);
+    subitem->setData(0, TypeObjectRole, QVariant::fromValue(ITypePtrBox{var.typeObj}));
     subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
     subitem->setData(GeneralCol, IconTypeRole, uint32_t(var.iconType));
     subitem->setText(SortCol, QString::number(sortColIdx));
@@ -257,9 +251,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
         case SymbolBackend::VariableIconType::FloatingPoint:
             subitem->setIcon(0, QIcon(":/icons/trivial_variable_floating_point.svg"));
             break;
-        case SymbolBackend::VariableIconType::Structure:
-            subitem->setIcon(0, QIcon(":/icons/structure.svg"));
-            break;
+        case SymbolBackend::VariableIconType::Structure: subitem->setIcon(0, QIcon(":/icons/structure.svg")); break;
         case SymbolBackend::VariableIconType::Pointer:
             subitem->setIcon(0, QIcon(":/icons/trivial_variable_trivial_pointer.svg"));
             break;

@@ -381,6 +381,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
             node.iconType = VariableIconType::Unknown;
         } else {
             auto typeObj = typeObjResult.unwrap();
+            node.typeObj = typeObj;
             writeTypeInfoToVariableNode(node, typeObj);
         }
 
@@ -391,13 +392,9 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
 }
 
 Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
-    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, DieRef typeSpec) {
+    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, IType::p typeObj) {
     QList<VariableNode> ret;
-    auto typeResult = derefTypeDie(typeSpec);
-    if (typeResult.isErr()) {
-        return Err(typeResult.unwrapErr());
-    }
-    auto result = typeResult.unwrap()->getChildren();
+    auto result = typeObj->getChildren();
     if (result.isErr()) {
         return Err(Error::InvalidParameter);
     }
@@ -406,7 +403,9 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
         VariableNode node;
         writeTypeInfoToVariableNode(node, i.type);
         // node.address = // FIXME:
+
         node.displayName = i.name;
+        node.typeObj = i.type;
         expandResult.subNodeDetails.append(node);
     }
     // return Err(Error::NoError);
@@ -895,6 +894,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                 childInfo.bitOffset = 0;
                 childInfo.bitWidth = 0;
                 childInfo.byteOffset = 0;
+                childInfo.flags = 0;
                 // Get offsets (for unions they are always zero)
                 if (!attr.has(DW_AT_data_member_location) && dieType != DW_TAG_union_type) {
                     continue; // Probably is a static member, discard this member

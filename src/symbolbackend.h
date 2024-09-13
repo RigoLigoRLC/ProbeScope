@@ -126,6 +126,7 @@ public:
         bool expandable;
         void *address;
         DieRef typeSpec;
+        IType::p typeObj;
     };
 
     struct ExpandNodeResult {
@@ -166,7 +167,7 @@ public:
     Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
 
     // TODO:
-    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, DieRef typeSpec);
+    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, IType::p typeObj);
 
 private:
     /**
@@ -350,5 +351,11 @@ private:
     QList<DieRef> m_resolutionNamespaceDies;
 };
 
+struct ITypePtrBox {
+    operator QVariant() { return QVariant::fromValue(*this); }
+    IType::p p;
+};
+
 Q_DECLARE_METATYPE(SymbolBackend::DieRef);
+Q_DECLARE_METATYPE(ITypePtrBox);
 QDebug operator<<(QDebug debug, const SymbolBackend::DieRef &c);

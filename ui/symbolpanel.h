@@ -47,6 +47,7 @@ public:
         VariableNameRole,
         IconTypeRole,
         TypespecRole, ///< DWARF type DIE offset
+        TypeObjectRole,
     };
 
     enum ColumnKind { GeneralCol, SortCol };
