@@ -309,7 +309,6 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         // }
         auto addrAttrResult = DwarfFormConstant(addrAttr);
         if (addrAttrResult.isErr()) {
-            __debugbreak();
             qCritical() << "Variable DIE " << DieRef(cuIndex, it.key())
                         << "Failed to get address:" << errorString(addrAttrResult.unwrapErr());
             return Err(Error::DwarfDieFormatInvalid);
@@ -594,7 +593,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             }
             auto encodingX = encodingResult.unwrap();
             auto byteSizeX = byteSizeResult.unwrap();
-            if ((encodingX.u != 2 && encodingX.u < 4 && encodingX.u > 8) ||
+            if ((encodingX.u != 2 && (encodingX.u < 4 || encodingX.u > 8)) ||
                 (qPopulationCount(byteSizeX.u) != 1 || byteSizeX.u > 8)) {
                 qWarning() << "DW_TAG_base_type" << typeDie << "encoding =" << encodingX.u
                            << "byteSize =" << byteSizeX.u << "is unsupported!";
@@ -690,7 +689,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                     subranges.append(subrange);
                 }
                 auto lastLayerBaseType = baseTypeResult.unwrap();
-                for (int i = subranges.size(); i >= 0; i--) {
+                for (int i = subranges.size() - 1; i >= 0; i--) {
                     DwarfAttrList attr(m_dwarfDbg, subranges[i]);
                     if (!attr.has(DW_AT_upper_bound)) {
                         qCritical() << "DW_TAG_array_type" << typeDie << "Cannot get subrange upperbound";
@@ -1034,16 +1033,29 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             // We frequently use typedef to give an unnamed structure an alias.
             // We give a name to these unnamed structures if we've found them.
             if (auto structureType = std::dynamic_pointer_cast<TypeStructure>(ret); structureType) {
-                // QString typedefName;
-                // if (!attr.has(DW_AT_name)) {
-                //     qWarning() << "Forwarding type" << typeDie
-                // }
-                // structureType->m_namedByTypedef = true;
-                // structureType->m_anonymous = false;
+                if (!attr.has(DW_AT_name)) {
+                    qWarning() << "Forwarding type" << typeDie
+                               << "Trying to name an unnamed structure, "
+                                  "but typedef doesn't have a name";
+                } else if (char *typedefNamePtr;
+                           dwarf_formstring(attr(DW_AT_name), &typedefNamePtr, &m_err) != DW_DLV_OK ||
+                           typedefNamePtr == nullptr || strlen(typedefNamePtr) == 0) {
+                    qWarning() << "Forwarding type" << typeDie
+                               << "Trying to name an unnamed structure, "
+                                  "but typedef name is either unable to be formed, nullptr, or empty";
+                } else {
+                    structureType->m_typeName = typedefNamePtr;
+                    structureType->m_namedByTypedef = true;
+                    structureType->m_anonymous = false;
+                }
             }
             break;
         }
+        case DW_TAG_reference_type:
+            ret = getUnsupported();
+            break; // TODO:
         // WTF
+        case DW_TAG_ptr_to_member_type:
         case DW_TAG_unspecified_type: ret = getUnsupported(); break;
         default: Q_UNREACHABLE();
     }
@@ -1666,7 +1678,7 @@ Result<SymbolBackend::DwarfFormedInt, SymbolBackend::Error> SymbolBackend::Dwarf
         qDebug() << "Cannot get form";
         return Err(Error::DwarfApiFailure);
     }
-    if (form == DW_FORM_block) {
+    if (form == DW_FORM_block || form == DW_FORM_exprloc) {
         // https://www.prevanders.net/libdwarfdoc/group__example__loclistcv5.html
         Dwarf_Unsigned lcount = 0;
         Dwarf_Loc_Head_c loclist_head = 0;
