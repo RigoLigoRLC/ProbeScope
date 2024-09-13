@@ -207,7 +207,7 @@ void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
 void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
     auto varName = item->data(0, VariableNameRole).toString();
     auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
-    auto typespec = item->data(0, TypespecRole).value<SymbolBackend::TypeDieRef>();
+    auto typespec = item->data(0, TypespecRole).value<SymbolBackend::DieRef>();
 
     auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typespec);
     if (result.isErr()) {

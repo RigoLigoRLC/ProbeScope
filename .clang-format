@@ -115,3 +115,6 @@ AlignArrayOfStructures: Left
 # ContinuationIndentWidth: 0
 
 FixNamespaceComments: false
+
+# 使短的case标签放在一行内
+AllowShortCaseLabelsOnASingleLine: true

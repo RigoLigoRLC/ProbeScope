@@ -3,6 +3,8 @@
 
 #include "gdbcontainer.h"
 #include "libdwarf.h"
+#include "typerepresentation.h"
+#include <QDebug>
 #include <QEventLoop>
 #include <QHash>
 #include <QMap>
@@ -11,6 +13,7 @@
 #include <QString>
 #include <QTimer>
 #include <result.h>
+
 
 /**
  * @brief SymbolBacked uses GdbContainer under the hood to provide all the necessary symbol information
@@ -40,40 +43,23 @@ public:
      */
     enum class Error {
         NoError,
-        GdbNotStarted,
-        GdbResponseTimeout,
-        GdbStartupFail,
-        GdbCommandExecutionError,
-        UnexpectedGdbConsoleOutput,
-        UnsupportedCppIdentifier,
-        LibdwarfApiFailure,
+        DwarfApiFailure,
         InvalidParameter,
-        ExplainTypeFailed
+        ExplainTypeFailed,
+        DwarfReferredDieNotFound,
+        DwarfDieTypeInvalid,
+        DwarfDieFormatInvalid,
+        DwarfAttrNotConstant,
     };
 
-
     enum class VariableIconType {
+        Unknown,
         Integer,
         FloatingPoint,
         Boolean,
         Structure,
         Pointer,
         Array,
-        Unknown,
-    };
-
-    enum class ElementaryTypes {
-        Uint8,
-        Sint8,
-        Uint16,
-        Sint16,
-        Uint32,
-        Sint32,
-        Uint64,
-        Sint64,
-        Float32,
-        Float64,
-        Unsupported,
     };
 
     /**
@@ -88,17 +74,33 @@ public:
         Member, ///< Parent is a structure/union/class and child is a member of it
     };
 
+    /**
+     * @brief This is a list of reserved special CU indicies that appear only in m_typeMap keys, used for internal type
+     * representations and conveniences
+     *
+     */
+    enum class ReservedCu {
+        // This reserved virtual CU holds all the defined primitive types, offsets = IType::Kind enum values.
+        InternalPrimitiveTypes = -1,
+
+        // This reserved virtual CU has a single type instance "TypeUnsupported" at offset = 0.
+        InternalUnsupportedTypes = -2,
+    };
+
     struct TypeSpec {};
 
     /**
      * @brief Because a type DIE ref can cross CU boundary (this is disgusting) we must include the target CU index
      */
-    struct TypeDieRef {
-        TypeDieRef() = default;
-        TypeDieRef(int cu, Dwarf_Off off) : cuIndex(cu), dieOffset(off) {}
-        TypeDieRef(QPair<int, Dwarf_Off> pair) : cuIndex(pair.first), dieOffset(pair.second) {}
-        TypeDieRef(const TypeDieRef &) = default;
-        TypeDieRef &operator=(const TypeDieRef &) = default;
+    struct DieRef {
+        DieRef() = default;
+        DieRef(int cu, Dwarf_Off off) : cuIndex(cu), dieOffset(off) {}
+        DieRef(QPair<int, Dwarf_Off> pair) : cuIndex(pair.first), dieOffset(pair.second) {}
+        DieRef(const DieRef &) = default;
+        DieRef &operator=(const DieRef &) = default;
+        friend bool operator<(const DieRef &l, const DieRef &r) {
+            return (l.cuIndex < r.cuIndex) || (l.dieOffset < r.dieOffset);
+        }
         operator QVariant() { return QVariant::fromValue(*this); }
         int cuIndex;
         Dwarf_Off dieOffset;
@@ -123,12 +125,12 @@ public:
         VariableIconType iconType;
         bool expandable;
         void *address;
-        TypeDieRef typeSpec;
+        DieRef typeSpec;
     };
 
     struct ExpandNodeResult {
         QVector<VariableNode> subNodeDetails;
-        Dwarf_Half tag;
+        Dwarf_Half tag; // TODO: unused at all
     };
 
     /**
@@ -164,7 +166,7 @@ public:
     Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
 
     // TODO:
-    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, TypeDieRef typeSpec);
+    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, DieRef typeSpec);
 
 private:
     /**
@@ -239,9 +241,9 @@ private:
     };
 
     struct TypeResolutionContext {
-        TypeResolutionContext() : typedefTypeName(QString()), arrayElementTypeOff(0, 0) {}
-        QString typedefTypeName;        ///< Outmost layer typedef defined type name
-        TypeDieRef arrayElementTypeOff; ///< Array element type defined in DW_TAG_array_type
+        TypeResolutionContext() = default;
+
+        QSet<DieRef> recursionChain; ///< Used to detect loop dependency
     };
 
     struct DwarfCuData {
@@ -259,32 +261,68 @@ private:
         struct TypeDieDetails {
             QString displayName;
             Dwarf_Half dwarfTag;
-            TypeDieRef arraySubrangeElementTypeDie; ///< Exclusively for subranges
+            DieRef arraySubrangeElementTypeDie; ///< Exclusively for subranges
             bool expandable;
         };
         QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
     };
 
+    void addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die);
+
+    /**
+     * @brief Create the primitive types, unsupported types' representation in m_typeMap.
+     *
+     */
+    void createInternalTypes();
+
+    // Functions to fetch internal types
+    IType::p getPrimitive(IType::Kind kind);
+    IType::p getUnsupported();
+
     bool isCuQualifiedSourceFile(DwarfCuData &cuData);
+
+    /**
+     * @brief Convert global DIE offset to CU-local offset.
+     * @return On success: CU index and CU-local offset. On failure: nothing.
+     */
+    Result<QPair<int, Dwarf_Off>, std::nullptr_t> dieOffsetGlobalToCuBased(Dwarf_Off globalOffset);
+
     /**
      * @brief Deref of DW_FORM_ref*, either CU local or global. Args are same as dwarf_formref
      * @return On success: a pair of <CuIndex, CuLocalOffset>. On failure: Last libdwarf API call result
      */
-    Result<QPair<int, Dwarf_Off>, int> anyDeref(Dwarf_Attribute dw_attr, Dwarf_Off *dw_out_off, Dwarf_Bool *dw_is_info,
-                                                Dwarf_Error *dw_err);
-    Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie);
-    Result<DwarfCuData::TypeDieDetails, Error> getTypeDetails(TypeDieRef typeDie);
-    bool ensureTypeResolved(uint32_t cuIndex, Dwarf_Off typeDie);
-    bool resolveTypeDetails(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext &ctx);
+    Result<QPair<int, Dwarf_Off>, int> anyDeref(Dwarf_Attribute dw_attr, Dwarf_Bool *dw_is_info, Dwarf_Error *dw_err);
+    /**
+     * @brief Get the internal type representation for a type DIE. If the DIE is unresolved, resolution will be
+     * attempted internally recursively.
+     *
+     * @param typeDie DIE reference.
+     * @return On success: IType ptr. On failure: error code.
+     */
+    Result<IType::p, Error> derefTypeDie(DieRef typeDie);
 
-    Result<ExpandNodeResult, Error> tryExpandType(uint32_t cuIndex, Dwarf_Off typeDie, TypeResolutionContext ctx,
-                                                  QString varName);
+    /**
+     * @brief Should only be called by derefTypeDie when a type DIE is not found in m_typeMap (unresolved).
+     * Please note that a failed resolution will not be stored into the map.
+     *
+     * @param typeDie DIE reference.
+     * @return On success: TypeBase ptr. On failure: error code.
+     */
+    Result<IType::p, Error> resolveTypeDie(DieRef typeDie);
+
+    static void writeTypeInfoToVariableNode(VariableNode &node, IType::p type);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
+    static bool isANestableType(Dwarf_Half tag);
 
     // Custom extended DWARF manipulators
-    int DwarfFormRefEx(Dwarf_Attribute dw_attr, Dwarf_Off *dw_out_off, Dwarf_Bool *dw_is_info, Dwarf_Error *dw_err);
+    union DwarfFormedInt {
+        Dwarf_Unsigned u;
+        Dwarf_Signed s;
+    };
     Result<Dwarf_Off, int> DwarfCuDataOffsetFromDie(Dwarf_Die die,
                                                     Dwarf_Error *); ///< Get CU data offset for the owner CU of this DIE
+    Result<DwarfFormedInt, int> DwarfFormInt(Dwarf_Attribute attr);
+    Result<DwarfFormedInt, Error> DwarfFormConstant(Dwarf_Attribute attr); ///< Added for Keil member location
 
 private:
     // GDB Shenanigans
@@ -303,7 +341,14 @@ private:
     Dwarf_Debug m_dwarfDbg;
     QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
     QMap<Dwarf_Off, int> m_cuOffsetMap;       ///< (CuBaseOffset -> CuVectorIndex) mapping
+    QMap<DieRef, IType::p> m_typeMap;         ///< (CuOffset -> TypeBase) mapping, for entire file
     QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
+    Dwarf_Error m_err;
+    TypeBase::p m_errorType;
+
+    QList<DieRef> m_resolutionTypeDies;
+    QList<DieRef> m_resolutionNamespaceDies;
 };
 
-Q_DECLARE_METATYPE(SymbolBackend::TypeDieRef);
+Q_DECLARE_METATYPE(SymbolBackend::DieRef);
+QDebug operator<<(QDebug debug, const SymbolBackend::DieRef &c);
