@@ -46,6 +46,7 @@ public:
         DwarfApiFailure,
         InvalidParameter,
         ExplainTypeFailed,
+        DwarfFailedToGetAddressSize,
         DwarfReferredDieNotFound,
         DwarfDieTypeInvalid,
         DwarfDieFormatInvalid,
@@ -131,7 +132,6 @@ public:
 
     struct ExpandNodeResult {
         QVector<VariableNode> subNodeDetails;
-        Dwarf_Half tag; // TODO: unused at all
     };
 
     /**
@@ -314,6 +314,7 @@ private:
     static void writeTypeInfoToVariableNode(VariableNode &node, IType::p type);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
     static bool isANestableType(Dwarf_Half tag);
+    static void propagateOffset(std::optional<TypeChildInfo::offset_t> &base, std::optional<TypeChildInfo::offset_t>);
 
     // Custom extended DWARF manipulators
     union DwarfFormedInt {
@@ -346,6 +347,7 @@ private:
     QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
     Dwarf_Error m_err;
     TypeBase::p m_errorType;
+    Dwarf_Half m_machineWordSize; ///< In bytes
 
     QList<DieRef> m_resolutionTypeDies;
     QList<DieRef> m_resolutionNamespaceDies;
@@ -359,3 +361,4 @@ struct ITypePtrBox {
 Q_DECLARE_METATYPE(SymbolBackend::DieRef);
 Q_DECLARE_METATYPE(ITypePtrBox);
 QDebug operator<<(QDebug debug, const SymbolBackend::DieRef &c);
+QDebug operator<<(QDebug debug, const std::optional<TypeChildInfo::offset_t> &c);

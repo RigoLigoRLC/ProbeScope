@@ -71,6 +71,8 @@ public:
         Structure,
         Class = Structure, // Who knows if we're going to use it
         Union,
+
+        Enumeration,
     };
     enum Flags {
         NoFlags = 0,
@@ -123,6 +125,7 @@ protected:
 };
 
 struct TypeChildInfo {
+    typedef uint32_t offset_t;
     enum Flags {
         NoFlags = 0,
         FromInheritance = 1,           ///< This member is synthesized from inherited subclass
@@ -131,7 +134,7 @@ struct TypeChildInfo {
     };
     QString name;
     IType::p type;
-    uint32_t byteOffset;
+    std::optional<offset_t> byteOffset;
     uint8_t flags;
     uint8_t bitOffset; // This and the following only applies to bitfield members
     uint8_t bitWidth;  // For bitfields: First offset (byteOffset) bytes, then offset (bitOffset) bits, and the bitfield
@@ -241,6 +244,7 @@ public:
         Array,
         Pointer,
     };
+    static constexpr int arrayExpansionLimit = 50;
     TypeModified(IType::p baseType, Modifier mod, std::optional<size_t> additional)
         : m_baseType(baseType), m_mod(mod), m_additional(additional) {
         m_kind = baseType->kind();
@@ -249,15 +253,67 @@ public:
             m_additional.value()++;
         }
     }
-    virtual QString displayName() override { return m_baseType->displayName() + modifierString(); }
+    virtual QString displayName() override {
+        if (m_mod == Modifier::Pointer && m_baseType->kind() == Kind::Unsupported) {
+            return "void*"; // For all pointers to unsupported types, we return void*
+        }
+        // Inserting modifiers properly. This is magic. Recommended readings:
+        // http://unixwiz.net/techtips/reading-cdecl.html
+        // Because C declarations are so messed up, we'd better traverse the entire modification chain to properly apply
+        // modifiers. Enjoy!
+        std::shared_ptr<TypeModified> lastType,
+            currentType = std::static_pointer_cast<TypeModified>(shared_from_this());
+        QString ret;
+        while (currentType.get() != nullptr) {
+            if (currentType->m_mod == Modifier::Array && lastType && lastType->m_mod == Modifier::Pointer &&
+                !ret.isEmpty()) {
+                // When last modifier is a pointer, we must enclose displayName with parenthesis for correct precedence
+                ret = '(' + ret + ')';
+            }
+            switch (currentType->m_mod) {
+                case Modifier::Array: ret.append(currentType->modifierString()); break;
+                case Modifier::Pointer: ret.prepend(currentType->modifierString()); break;
+                default: break;
+            }
+            // Switch to next depth
+            lastType = currentType;
+            currentType = std::dynamic_pointer_cast<TypeModified>(currentType->m_baseType);
+        }
+        // Put base type text in
+        ret = (lastType->m_baseType ? lastType->m_baseType->displayName() : "<ErrorType>") + ret;
+        return ret;
+    }
     virtual bool expandable() override {
-        // Base type must not be unsupported (function pointer is not expandable)
+        // Base type must not be unsupported (function pointer is not expandable, for example)
         // If the modified type is an array, element count must be less than 50 (to avoid performance degredation)
         return (m_baseType->kind() != Kind::Unsupported) &&
-               (m_additional.value_or(std::numeric_limits<size_t>::max()) < 50);
+               (m_additional.value_or(std::numeric_limits<size_t>::max()) < arrayExpansionLimit);
     }
-    virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() override { return Err(nullptr); } // TODO:
-    virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override { return Err(nullptr); }
+    virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() override {
+        if (m_children.isEmpty()) {
+            if (generateChildrenList()) {
+                return Ok(m_children);
+            } else {
+                return Err(nullptr);
+            }
+        }
+        return Ok(m_children);
+    }
+    virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override {
+        // clang-format off
+        // Future contributors will hate this one-liner
+        if (struct { bool ok; uint64_t n; } x; m_mod == Modifier::Array && (x.n = childName.toULongLong(&x.ok), x.ok)) {
+            return Ok(TypeChildInfo{
+                QString("[%1]").arg(childName), m_baseType, m_baseType->getSizeof() * x.n, 0, 0, 0
+            });
+            // clang-format on
+        } else if (m_children.isEmpty() && !generateChildrenList()) {
+            return Err(nullptr);
+        } else if (auto child = m_childrenMap.find(childName); child != m_childrenMap.end()) {
+            return Ok(m_children[*child]);
+        }
+        return Err(nullptr);
+    }
     virtual Result<IType::p, std::nullptr_t> getOperated(Operation op) override { return Ok(m_baseType); }
     virtual size_t getSizeof() override {
         switch (m_mod) {
@@ -272,9 +328,45 @@ public:
     Modifier modifier() { return m_mod; }
 
 private:
+    bool generateChildrenList() {
+        if (m_baseType->kind() == IType::Kind::Unsupported)
+            return false;
+        switch (m_mod) {
+            case Modifier::Array:
+                for (int i = 0; i < std::min(m_additional.value_or(0), size_t(arrayExpansionLimit)); i++) {
+                    TypeChildInfo childInfo;
+                    childInfo.type = m_baseType;
+                    childInfo.name = QString("[%1]").arg(i);
+                    childInfo.flags = 0;
+                    childInfo.bitOffset = 0;
+                    childInfo.bitWidth = 0;
+                    childInfo.byteOffset = i * m_baseType->getSizeof();
+                    m_children.append(childInfo);
+                    m_childrenMap[childInfo.name] = m_children.size() - 1;
+                }
+                return true;
+            case Modifier::Pointer: {
+                TypeChildInfo childInfo;
+                childInfo.type = m_baseType;
+                childInfo.name = "*";
+                childInfo.flags = 0;
+                childInfo.bitOffset = 0;
+                childInfo.bitWidth = 0;
+                childInfo.byteOffset.reset(); // Dereferencing will make offset undetermined
+                m_children.append(childInfo);
+                m_childrenMap[childInfo.name] = 0;
+                return true;
+            }
+        }
+        return false;
+    }
+
+private:
     IType::p m_baseType;
     Modifier m_mod;
     std::optional<size_t> m_additional;
+    QVector<TypeChildInfo> m_children;
+    QHash<QString, int> m_childrenMap;
     QString modifierString() {
         switch (m_mod) {
             case Modifier::Array:

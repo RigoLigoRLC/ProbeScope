@@ -36,6 +36,7 @@ QString SymbolBackend::errorString(SymbolBackend::Error error) {
         case Error::DwarfApiFailure: return tr("A libdwarf API call has failed");
         case Error::ExplainTypeFailed:
             return tr("Action failed because an internal call to explainType was unsuccessful");
+        case Error::DwarfFailedToGetAddressSize: return tr("DWARF: Failed to get machine address size.");
         case Error::DwarfReferredDieNotFound: return tr("DWARF: Referred DIE is not found.");
         case Error::DwarfDieTypeInvalid: return tr("DWARF: Referred DIE has invalid TAG type.");
         case Error::DwarfDieFormatInvalid: return tr("DWARF: Referred DIE data format is corrupted.");
@@ -75,6 +76,11 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                             &m_dwarfDbg, &dwErr);
     if (dwRet != DW_DLV_OK) {
         return Err(Error::DwarfApiFailure);
+    }
+
+    // Fetch machine native word size, for example, Cortex-M MCU's are 32 bit
+    if (dwarf_get_address_size(m_dwarfDbg, &m_machineWordSize, &m_err) != DW_DLV_OK) {
+        return Err(Error::DwarfFailedToGetAddressSize);
     }
 
     m_progressDialog.setLabelText(tr("Refreshing symbols..."));
@@ -267,7 +273,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
     }
     QList<VariableNode> ret;
     auto &cu = m_cus[cuIndex];
-    auto &topDies = cu.TopDies, &allDies = cu.Dies;
+    auto &topDies = cu.TopDies;
 
     // Find all variable DIEs
     for (auto it = topDies.constBegin(); it != topDies.constEnd(); it++) {
@@ -319,19 +325,18 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         // This is found in root items when a global is defined in a namespace
         Dwarf_Half form;
         Dwarf_Attribute specificationAttr;
-        Dwarf_Off trueOffset = 0;
         if ((specificationAttr = attrs(DW_AT_specification)) && !attrs.has(DW_AT_name)) {
             Dwarf_Bool isInfo;
-            if (dwarf_formref(specificationAttr, &trueOffset, &isInfo, &m_err) != DW_DLV_OK || !isInfo ||
-                !cu.hasDie(trueOffset)) {
+            if (auto derefResult = anyDeref(specificationAttr, nullptr, &m_err); derefResult.isErr()) {
                 Dwarf_Off off;
                 dwarf_die_CU_offset(it.value(), &off, &m_err);
-                qDebug() << "Go to referenced variable: CU has no DIE" << QString::number(trueOffset, 16)
-                         << ", var DIE:" << QString::number(off, 16);
+                qDebug() << "Go to referenced variable: var DIE specification invalid:" << QString::number(off, 16);
                 return Err(Error::DwarfApiFailure);
+            } else {
+                auto deref = derefResult.unwrap();
+                actualVariableDie = m_cus[deref.first].die(deref.second);
+                attrs = std::move(DwarfAttrList(m_dwarfDbg, actualVariableDie));
             }
-            actualVariableDie = allDies.value(trueOffset);
-            attrs = std::move(DwarfAttrList(m_dwarfDbg, actualVariableDie));
         }
 
         VariableNode node;
@@ -400,6 +405,11 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
     }
     ExpandNodeResult expandResult;
     foreach (auto &i, result.unwrap()) {
+        // I've decided that we leave anonymous substructures out (only synthesized members are left)
+        if (i.flags & TypeChildInfo::AnonymousSubstructure) {
+            continue;
+        }
+
         VariableNode node;
         writeTypeInfoToVariableNode(node, i.type);
         // node.address = // FIXME:
@@ -413,11 +423,6 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-///                     GDB GARBAGE ABOVE
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die) {
     Dwarf_Half tag;
@@ -734,21 +739,20 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
         case DW_TAG_pointer_type: {
             DwarfAttrList attr(m_dwarfDbg, die);
             if (!attr.has(DW_AT_type)) {
-                qCritical() << "DW_TAG_pointer_type" << typeDie << "Has no referred type";
-                return Err(Error::DwarfDieFormatInvalid);
-            }
-            auto derefTypeResult = anyDeref(attr(DW_AT_type), nullptr, &m_err);
-            if (derefTypeResult.isErr()) {
+                // This is normal for void*
+                ret = std::make_shared<TypeModified>(getUnsupported(), TypeModified::Modifier::Pointer,
+                                                     m_machineWordSize);
+            } else if (auto derefTypeResult = anyDeref(attr(DW_AT_type), nullptr, &m_err); derefTypeResult.isErr()) {
                 qCritical() << "DW_TAG_pointer_type" << typeDie << "Referred type can't be dereferenced";
                 return Err(Error::DwarfDieFormatInvalid);
-            }
-            auto forwardResult = derefTypeDie(derefTypeResult.unwrap());
-            if (forwardResult.isErr()) {
+            } else if (auto forwardResult = derefTypeDie(derefTypeResult.unwrap()); forwardResult.isErr()) {
                 qCritical() << "DW_TAG_pointer_type" << typeDie
                             << "type resolution failed:" << errorString(forwardResult.unwrapErr());
                 return Err(Error::DwarfDieFormatInvalid);
+            } else {
+                ret = std::make_shared<TypeModified>(forwardResult.unwrap(), TypeModified::Modifier::Pointer,
+                                                     m_machineWordSize);
             }
-            ret = getUnsupported();
             break;
         }
         case DW_TAG_enumeration_type:
@@ -849,9 +853,8 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                         qWarning() << "Structural type" << typeDie << "Has a virtual inheritance and was discarded";
                         type->m_hasVirtualInheritance = true;
                         continue;
-                    }
-                    // Get the inherited base class
-                    if (!attr.has(DW_AT_type) || !attr.has(DW_AT_data_member_location)) {
+                    } else if (!attr.has(DW_AT_type) || !attr.has(DW_AT_data_member_location)) {
+                        // Get the inherited base class
                         qWarning() << "Structural type" << typeDie << "Inheritance information incomplete";
                         continue;
                     } else if (auto typeDerefResult = anyDeref(attr(DW_AT_type), nullptr, &m_err);
@@ -876,7 +879,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                         // Add base class members
                         foreach (auto i, baseChildrenResult.unwrap()) {
                             i.flags |= TypeChildInfo::FromInheritance;
-                            i.byteOffset += baseOffset;
+                            propagateOffset(i.byteOffset, baseOffset);
                             type->addMember(i);
                         }
                         // Propagate virtual inheritance flag
@@ -915,8 +918,8 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                     auto nameAttr = attr(DW_AT_name);
                     char *nameStr;
                     if (dwarf_formstring(nameAttr, &nameStr, &m_err) != DW_DLV_OK) {
-                        qCritical() << "Structural type" << typeDie << "member @" << childInfo.byteOffset
-                                    << "Cannot form name string";
+                        qCritical() << "Structural type" << typeDie << "member @"
+                                    << childInfo.byteOffset.value_or(0xffffffff) << "Cannot form name string";
                         continue;
                     }
                     if (strlen(nameStr) == 0) {
@@ -961,7 +964,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                     }
                     Dwarf_Unsigned bitOffset =
                         byteSizeResult.unwrap().u * 8 - bitSizeResult.unwrap().u - bitOffsetResult.unwrap().u;
-                    childInfo.byteOffset += bitOffset / 8;
+                    propagateOffset(childInfo.byteOffset, bitOffset / 8);
                     childInfo.bitOffset = static_cast<uint8_t>(bitOffset % 8);
                     childInfo.bitWidth = static_cast<uint8_t>(bitSizeResult.unwrap().u);
                 }
@@ -976,7 +979,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                         continue;
                     }
                     foreach (auto i, anonChildResult.unwrap()) {
-                        i.byteOffset += childInfo.byteOffset;
+                        propagateOffset(i.byteOffset, childInfo.byteOffset);
                         i.flags |= TypeChildInfo::FromAnonymousSubstructure;
                         type->addMember(i);
                     }
@@ -1032,21 +1035,23 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
 
             // We frequently use typedef to give an unnamed structure an alias.
             // We give a name to these unnamed structures if we've found them.
-            if (auto structureType = std::dynamic_pointer_cast<TypeStructure>(ret); structureType) {
-                if (!attr.has(DW_AT_name)) {
-                    qWarning() << "Forwarding type" << typeDie
-                               << "Trying to name an unnamed structure, "
-                                  "but typedef doesn't have a name";
-                } else if (char *typedefNamePtr;
-                           dwarf_formstring(attr(DW_AT_name), &typedefNamePtr, &m_err) != DW_DLV_OK ||
-                           typedefNamePtr == nullptr || strlen(typedefNamePtr) == 0) {
-                    qWarning() << "Forwarding type" << typeDie
-                               << "Trying to name an unnamed structure, "
-                                  "but typedef name is either unable to be formed, nullptr, or empty";
-                } else {
-                    structureType->m_typeName = typedefNamePtr;
-                    structureType->m_namedByTypedef = true;
-                    structureType->m_anonymous = false;
+            if (dieType == DW_TAG_typedef && (ret->flags() & IType::Anonymous)) {
+                if (auto structureType = std::dynamic_pointer_cast<TypeStructure>(ret); structureType) {
+                    if (!attr.has(DW_AT_name)) {
+                        qWarning() << "Forwarding type" << typeDie
+                                   << "Trying to name an unnamed structure, "
+                                      "but typedef doesn't have a name";
+                    } else if (char *typedefNamePtr;
+                               dwarf_formstring(attr(DW_AT_name), &typedefNamePtr, &m_err) != DW_DLV_OK ||
+                               typedefNamePtr == nullptr || strlen(typedefNamePtr) == 0) {
+                        qWarning() << "Forwarding type" << typeDie
+                                   << "Trying to name an unnamed structure, but typedef name "
+                                      "is either unable to be formed, nullptr, or empty";
+                    } else {
+                        structureType->m_typeName = typedefNamePtr;
+                        structureType->m_namedByTypedef = true;
+                        structureType->m_anonymous = false;
+                    }
                 }
             }
             break;
@@ -1628,9 +1633,29 @@ bool SymbolBackend::isANestableType(Dwarf_Half tag) {
     }
 }
 
+void SymbolBackend::propagateOffset(std::optional<TypeChildInfo::offset_t> &base,
+                                    std::optional<TypeChildInfo::offset_t> offset) {
+    if (offset.has_value()) {
+        // Propagate offset value
+        base.value() += offset.value();
+    } else {
+        // Propagate undeterminable state
+        base.reset();
+    }
+}
+
 QDebug operator<<(QDebug debug, const SymbolBackend::DieRef &c) {
     QDebugStateSaver saver(debug);
     return debug.nospace() << "DieRef(" << c.cuIndex << "," << c.dieOffset << ")";
+}
+
+QDebug operator<<(QDebug debug, const std::optional<TypeChildInfo::offset_t> &c) {
+    QDebugStateSaver saver(debug);
+    if (c.has_value()) {
+        return debug.nospace().noquote() << "ChildOffset(0x" << QString::number(c.value(), 16) << ")";
+    } else {
+        return debug.nospace() << "ChildOffset(Undetermined)";
+    }
 }
 
 /***************************************** DWARF HELPERS *****************************************/
