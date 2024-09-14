@@ -1,7 +1,6 @@
 
 #pragma once
 
-#include "gdbcontainer.h"
 #include "libdwarf.h"
 #include "typerepresentation.h"
 #include <QDebug>
@@ -327,19 +326,10 @@ private:
     Result<DwarfFormedInt, Error> DwarfFormConstant(Dwarf_Attribute attr); ///< Added for Keil member location
 
 private:
-    // GDB Shenanigans
-    // GdbContainer m_gdb;
-    QString m_symbolFileFullPath;
-    bool m_gdbProperlySet;
-
-    QEventLoop m_eventLoop;
-    QTimer m_waitTimer;
     QProgressDialog m_progressDialog;
+    QString m_symbolFileFullPath;
 
-    gdbmi::Response m_lastGdbResponse;
-    uint64_t m_expectedGdbResponseToken;
-
-    // libdwarf to the rescue
+    // libdwarf context
     Dwarf_Debug m_dwarfDbg;
     QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
     QMap<Dwarf_Off, int> m_cuOffsetMap;       ///< (CuBaseOffset -> CuVectorIndex) mapping

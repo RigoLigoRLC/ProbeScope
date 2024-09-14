@@ -1,8 +1,6 @@
 
 #include "symbolbackend.h"
-#include "gdbcontainer.h"
-#include "gdbmi.h"
-#include "symbolpanel.h"
+#include <QApplication>
 #include <QDebug>
 #include <QMessageBox>
 #include <dwarf.h>
@@ -10,8 +8,6 @@
 
 SymbolBackend::SymbolBackend(QObject *parent) : QObject(parent) {
     m_symbolFileFullPath = "";
-    m_gdbProperlySet = false;
-    m_waitTimer.setSingleShot(true);
 
     // Initialize libdwarf data
     m_dwarfDbg = nullptr;
@@ -1615,7 +1611,8 @@ void SymbolBackend::writeTypeInfoToVariableNode(VariableNode &node, IType::p typ
             case IType::Kind::Uint32:
             case IType::Kind::Sint32:
             case IType::Kind::Uint64:
-            case IType::Kind::Sint64: node.iconType = VariableIconType::Integer; break;
+            case IType::Kind::Sint64:
+            case IType::Kind::Enumeration: node.iconType = VariableIconType::Integer; break;
             case IType::Kind::Float32:
             case IType::Kind::Float64: node.iconType = VariableIconType::FloatingPoint; break;
             case IType::Kind::Structure:

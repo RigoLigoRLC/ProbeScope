@@ -168,9 +168,7 @@ public:
             case IType::Kind::Sint64: return "unsigned long long";
             case IType::Kind::Float32: return "float";
             case IType::Kind::Float64: return "double";
-            case IType::Kind::Unsupported:
-            case IType::Kind::Structure:
-            case IType::Kind::Union: Q_UNREACHABLE(); break;
+            default: Q_UNREACHABLE(); break;
         }
         return "";
     }
@@ -190,9 +188,7 @@ public:
             case IType::Kind::Uint64:
             case IType::Kind::Sint64:
             case IType::Kind::Float64: return 8; break;
-            case IType::Kind::Unsupported:
-            case IType::Kind::Structure:
-            case IType::Kind::Union: Q_UNREACHABLE(); break;
+            default: Q_UNREACHABLE(); break;
         }
         return 0;
     }
