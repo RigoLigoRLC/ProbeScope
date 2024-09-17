@@ -1,5 +1,6 @@
 
 #include "symbolpanel.h"
+#include "delegate/symbolnamedelegate.h"
 #include "expressionevaluator.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
@@ -7,6 +8,7 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QTreeWidget>
+
 
 
 
@@ -19,7 +21,7 @@ SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     ui->treeSymbolTree->setColumnHidden(SortCol, true);
 
     // Initialize rich text item delegate
-    m_htmlDelegate = new HTMLDelegate(this);
+    m_htmlDelegate = new SymbolNameDelegate(this);
     ui->treeSymbolTree->setItemDelegateForColumn(GeneralCol, m_htmlDelegate);
 
     connect(ui->treeSymbolTree, &QTreeWidget::itemExpanded, this, &SymbolPanel::sltItemExpanded);
@@ -110,7 +112,6 @@ void SymbolPanel::sltAddWatchEntryClicked() {
                 inner = nodeChain[i - 1];
             }
 
-
             switch (SymbolBackend::VariableIconType(parent->data(GeneralCol, IconTypeRole).toUInt())) {
                 case SymbolBackend::VariableIconType::Integer:
                 case SymbolBackend::VariableIconType::FloatingPoint:
@@ -192,17 +193,16 @@ void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
     auto varList = result.unwrap();
     size_t index = 0;
     foreach (auto &var, varList) {
-        insertNodeByVarnodeInfo(var, item, cuIndex, index++);
+        insertNodeByVarnodeInfo(var, item, index++);
     }
 }
 
 void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
     auto varName = item->data(0, VariableNameRole).toString();
-    auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
-    auto typespec = item->data(0, TypespecRole).value<SymbolBackend::DieRef>();
     auto typeObj = item->data(0, TypeObjectRole).value<ITypePtrBox>().p;
+    auto location = item->data(0, VariableLocationRole).value<VariableLocationDesc>();
 
-    auto result = m_symbolBackend->getVariableChildren(varName, cuIndex, typeObj);
+    auto result = m_symbolBackend->getVariableChildren(location.byteOffset, typeObj);
     if (result.isErr()) {
         // TODO:
         qCritical() << "Failed to expand Varnode" << varName;
@@ -220,25 +220,35 @@ void SymbolPanel::dynamicPopulateChildForVarnode(QTreeWidgetItem *item) {
     auto varList = result.unwrap().subNodeDetails;
     size_t index = 0;
     foreach (auto &var, varList) {
-        insertNodeByVarnodeInfo(var, item, cuIndex, index++);
+        insertNodeByVarnodeInfo(var, item, index++);
     }
 }
 
-void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTreeWidgetItem *parent, uint32_t cuIndex,
-                                          size_t sortColIdx) {
+void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTreeWidgetItem *parent, size_t sortColIdx) {
     auto *subitem = new QTreeWidgetItem;
-    auto escapedDisplayTypeName = var.displayTypeName;
-    escapedDisplayTypeName.replace('<', "&lt;").replace('>', "&gt;");
-    subitem->setText(0, QString("<html><span>"
-                                "%1 <span style=\"font-style:italic;color:#9f9f9f;\">(%2)<span/>"
-                                "<span/><html/>")
-                            .arg(var.displayName, escapedDisplayTypeName));
+    QString addressText;
+    if (var.address.has_value()) {
+        char buf[19];
+        int n = snprintf(buf, sizeof(buf), "0x%08X", var.address.value()); // Good old C formatter is far better
+        if (n > sizeof(buf)) {
+            addressText = "0x" + QString::number(var.address.value(), 16); // Some one pushed it beyond limits...
+        } else {
+            addressText = buf;
+        }
+        if (var.bitSize) { // Bitfield occupation
+            addressText += QString(" [%2:%1]").arg(var.bitOffset).arg(var.bitSize + var.bitOffset - 1);
+        }
+    } else {
+        addressText = "*";
+    }
+    subitem->setText(0, var.displayName);
     subitem->setData(0, VariableNameRole, var.displayName);
-    subitem->setData(0, CompileUnitIndexRole, cuIndex);
-    subitem->setData(0, TypespecRole, var.typeSpec);
+    subitem->setData(0, VariableLocationRole, VariableLocationDesc{var.address, var.bitOffset, var.bitSize});
+    subitem->setData(0, TypeNameRole, var.displayTypeName);
     subitem->setData(0, TypeObjectRole, QVariant::fromValue(ITypePtrBox{var.typeObj}));
     subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
     subitem->setData(GeneralCol, IconTypeRole, uint32_t(var.iconType));
+    subitem->setText(AddressCol, addressText);
     subitem->setText(SortCol, QString::number(sortColIdx));
     if (var.expandable) {
         markNeedsPopulate(subitem);

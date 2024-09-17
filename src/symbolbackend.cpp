@@ -336,7 +336,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         }
 
         VariableNode node;
-        node.address = exprPtr;
+        node.address = (TypeChildInfo::offset_t) exprPtr; // Fix this later
 
         // Get variable display name
         char *dispName;
@@ -372,7 +372,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
             return Err(Error::DwarfApiFailure);
         }
         // node.typeSpec = typeSpec;
-        node.typeSpec = derefResult.unwrap();
+        // node.typeSpec = derefResult.unwrap();
 
         // TODO: displayable type name
         auto typeObjResult = derefTypeDie(derefResult.unwrap());
@@ -393,7 +393,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
 }
 
 Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
-    SymbolBackend::getVariableChildren(QString varName, uint32_t cuIndex, IType::p typeObj) {
+    SymbolBackend::getVariableChildren(std::optional<TypeChildInfo::offset_t> parentOffset, IType::p typeObj) {
     QList<VariableNode> ret;
     auto result = typeObj->getChildren();
     if (result.isErr()) {
@@ -412,6 +412,10 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
 
         node.displayName = i.name;
         node.typeObj = i.type;
+        node.address = parentOffset;
+        node.bitOffset = i.bitOffset;
+        node.bitSize = i.bitWidth;
+        propagateOffset(node.address, i.byteOffset);
         expandResult.subNodeDetails.append(node);
     }
     // return Err(Error::NoError);
@@ -1641,7 +1645,7 @@ SymbolBackend::VariableIconType SymbolBackend::dwarfTagToIconType(Dwarf_Half tag
 }
 
 void SymbolBackend::writeTypeInfoToVariableNode(VariableNode &node, IType::p typeObj) {
-    node.displayTypeName = typeObj->displayName();
+    node.displayTypeName = typeObj->flags() & IType::Flags::Anonymous ? tr("<Anonymous>") : typeObj->displayName();
     node.expandable = typeObj->expandable();
     // Give it an icon
     if (typeObj->flags() & IType::Flags::Modified) {
@@ -1687,7 +1691,7 @@ bool SymbolBackend::isANestableType(Dwarf_Half tag) {
 
 void SymbolBackend::propagateOffset(std::optional<TypeChildInfo::offset_t> &base,
                                     std::optional<TypeChildInfo::offset_t> offset) {
-    if (offset.has_value()) {
+    if (offset.has_value() && base.has_value()) {
         // Propagate offset value
         base.value() += offset.value();
     } else {

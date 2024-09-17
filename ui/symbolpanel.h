@@ -1,11 +1,11 @@
 
 #pragma once
 
-#include "delegate/htmldelegate.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
 #include <qtreewidget.h>
 
+class SymbolNameDelegate;
 
 class SymbolPanel : public QWidget {
     Q_OBJECT
@@ -45,12 +45,13 @@ public:
         NodeKindRole,
         CompileUnitIndexRole,
         VariableNameRole,
+        TypeNameRole,
         IconTypeRole,
-        TypespecRole, ///< DWARF type DIE offset
+        VariableLocationRole,
         TypeObjectRole,
     };
 
-    enum ColumnKind { GeneralCol, SortCol };
+    enum ColumnKind { GeneralCol, AddressCol, SortCol };
 
     void setSymbolBackend(SymbolBackend *);
 
@@ -65,7 +66,14 @@ public:
 
 private:
     SymbolBackend *m_symbolBackend;
-    HTMLDelegate *m_htmlDelegate;
+    SymbolNameDelegate *m_htmlDelegate;
+
+public:
+    struct VariableLocationDesc {
+        operator QVariant() { return QVariant::fromValue(*this); }
+        std::optional<TypeChildInfo::offset_t> byteOffset;
+        uint8_t bitOffset = 0, bitWidth = 0;
+    };
 
 private slots:
     void sltItemExpanded(QTreeWidgetItem *item);
@@ -75,6 +83,7 @@ private slots:
 private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);
     void dynamicPopulateChildForVarnode(QTreeWidgetItem *item);
-    void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, uint32_t cuIndex,
-                                 size_t sortColIdx);
+    void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, size_t sortColIdx);
 };
+
+Q_DECLARE_METATYPE(SymbolPanel::VariableLocationDesc);

@@ -120,12 +120,13 @@ public:
     };
 
     struct VariableNode {
+        VariableNode() : iconType(VariableIconType::Unknown), expandable(false), bitOffset(0), bitSize(0) {}
         QString displayName;
         QString displayTypeName;
         VariableIconType iconType;
         bool expandable;
-        void *address;
-        DieRef typeSpec;
+        std::optional<TypeChildInfo::offset_t> address;
+        uint8_t bitOffset, bitSize;
         IType::p typeObj;
     };
 
@@ -166,7 +167,8 @@ public:
     Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
 
     // TODO:
-    Result<ExpandNodeResult, Error> getVariableChildren(QString varName, uint32_t cuIndex, IType::p typeObj);
+    Result<ExpandNodeResult, Error> getVariableChildren(std::optional<TypeChildInfo::offset_t> parentOffset,
+                                                        IType::p typeObj);
 
 private:
     /**
@@ -343,6 +345,8 @@ private:
     QList<DieRef> m_resolutionNamespaceDies;
 };
 
+// Because you cannot put a shared_ptr into QVariant (and you cannot extend shared_ptr to implement that)
+// You'll need a dedicated struct to do that, which is stupid
 struct ITypePtrBox {
     operator QVariant() { return QVariant::fromValue(*this); }
     IType::p p;
