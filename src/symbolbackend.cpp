@@ -751,9 +751,54 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             }
             break;
         }
-        case DW_TAG_enumeration_type:
-            ret = getUnsupported();
-            break; // TODO:
+        case DW_TAG_enumeration_type: {
+            DwarfAttrList attr(m_dwarfDbg, die);
+            DwarfFormedInt byteSize;
+            QString name;
+            QMap<int64_t, QString> enumMap;
+            if (!attr.has(DW_AT_byte_size)) {
+                qCritical() << "Enumeration type" << typeDie << "Has no byte_size attribute";
+                return Err(Error::DwarfDieFormatInvalid);
+            } else if (auto byteSizeResult = DwarfFormConstant(attr(DW_AT_byte_size)); byteSizeResult.isErr()) {
+                qCritical() << "Enumeration type" << typeDie << "Cannot form constant";
+                return Err(Error::DwarfDieFormatInvalid);
+            } else {
+                byteSize = byteSizeResult.unwrap();
+            }
+
+            if (char *namePtr; attr.has(DW_AT_name) &&
+                               (dwarf_formstring(attr(DW_AT_name), &namePtr, &m_err) == DW_DLV_OK) && namePtr) {
+                name = namePtr;
+            }
+
+            // Iterate through children (enumeration values)
+            Dwarf_Die child;
+            if (dwarf_child(die, &child, &m_err) != DW_DLV_OK) {
+                qCritical() << "Enumeration type" << typeDie << "Has no child";
+                return Err(Error::DwarfDieFormatInvalid);
+            }
+            do {
+                DwarfAttrList attr(m_dwarfDbg, child);
+                if (!attr.has(DW_AT_const_value) || !attr.has(DW_AT_name)) {
+                    qCritical() << "Enumeration type" << typeDie << "Child" << child << "Has no const_value or name";
+                    return Err(Error::DwarfDieFormatInvalid);
+                } else if (auto constValueResult = DwarfFormConstant(attr(DW_AT_const_value));
+                           constValueResult.isErr()) {
+                    qCritical() << "Enumeration type" << typeDie << "Child" << child << "Cannot form const_value";
+                    return Err(Error::DwarfDieFormatInvalid);
+                } else {
+                    auto constValue = constValueResult.unwrap();
+                    char *namePtr;
+                    if (dwarf_formstring(attr(DW_AT_name), &namePtr, &m_err) != DW_DLV_OK) {
+                        qCritical() << "Enumeration type" << typeDie << "Child" << child << "Cannot form name string";
+                        return Err(Error::DwarfDieFormatInvalid);
+                    }
+                    enumMap[constValue.s] = namePtr;
+                }
+            } while (dwarf_siblingof_b(m_dwarfDbg, child, true, &child, &m_err) == DW_DLV_OK);
+            ret = std::make_shared<TypeEnumeration>(name, byteSize.s, enumMap);
+            break;
+        }
         // Class/Structure/Union are very similar in their internals
         case DW_TAG_class_type:
         case DW_TAG_structure_type:
@@ -1032,7 +1077,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             // We frequently use typedef to give an unnamed structure an alias.
             // We give a name to these unnamed structures if we've found them.
             if (dieType == DW_TAG_typedef && (ret->flags() & IType::Anonymous)) {
-                if (auto structureType = std::dynamic_pointer_cast<TypeStructure>(ret); structureType) {
+                auto getAttrName = [&]() -> char * {
                     if (!attr.has(DW_AT_name)) {
                         qWarning() << "Forwarding type" << typeDie
                                    << "Trying to name an unnamed structure, "
@@ -1043,10 +1088,20 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                         qWarning() << "Forwarding type" << typeDie
                                    << "Trying to name an unnamed structure, but typedef name "
                                       "is either unable to be formed, nullptr, or empty";
-                    } else {
-                        structureType->m_typeName = typedefNamePtr;
+                    } else
+                        return typedefNamePtr;
+                    return nullptr;
+                };
+                if (auto structureType = std::dynamic_pointer_cast<TypeStructure>(ret); structureType) {
+                    if (auto namePtr = getAttrName(); namePtr) {
+                        structureType->m_typeName = namePtr;
                         structureType->m_namedByTypedef = true;
                         structureType->m_anonymous = false;
+                    }
+                } else if (auto enumType = std::dynamic_pointer_cast<TypeEnumeration>(ret); enumType) {
+                    if (auto namePtr = getAttrName(); namePtr) {
+                        enumType->m_typeName = namePtr;
+                        enumType->m_namedByTypedef = true;
                     }
                 }
             }

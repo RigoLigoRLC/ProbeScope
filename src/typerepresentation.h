@@ -3,6 +3,7 @@
 
 #include "result.h"
 #include <QHash>
+#include <QMap>
 #include <QString>
 #include <QVector>
 #include <memory>
@@ -219,7 +220,6 @@ public:
 
 private:
     QString m_typeName;
-    IScope::p m_parentScope;
     QVector<TypeChildInfo> m_children;
     QVector<IType::p> m_inheritance;
     QHash<QString, int> m_childrenMap;
@@ -375,4 +375,34 @@ private:
         Q_UNREACHABLE();
         return 0;
     }
+};
+
+class TypeEnumeration : public TypeBase, public TypeScopeBase {
+public:
+    friend class SymbolBackend;
+
+    TypeEnumeration(QString typeName, size_t byteSize, QMap<int64_t, QString> enumMap)
+        : m_typeName(typeName), m_byteSize(byteSize), m_enumMap(enumMap) {}
+    virtual Kind kind() override { return Kind::Enumeration; }
+    virtual QString displayName() override { return m_typeName; }
+    virtual bool expandable() override { return false; }
+    virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() override { return Err(nullptr); }
+    virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override { return Err(nullptr); };
+    virtual Result<IType::p, std::nullptr_t> getOperated(Operation op) override { return Err(nullptr); };
+    virtual size_t getSizeof() override { return m_byteSize; }
+    virtual TypeFlags flags() override {
+        return TypeFlags({m_typeName.isEmpty() ? Anonymous : NoFlags, m_declaration ? Declaration : NoFlags,
+                          m_namedByTypedef ? NamedByTypedef : NoFlags}) |
+               TypeBase::flags();
+    }
+
+    virtual QString scopeName() override { return m_typeName; }
+    virtual IScope::p parentScope() override { return m_parentScope; }
+
+private:
+    QString m_typeName;
+    QMap<int64_t, QString> m_enumMap;
+    size_t m_byteSize = 0;
+    bool m_declaration = false;
+    bool m_namedByTypedef = false;
 };
