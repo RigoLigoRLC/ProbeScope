@@ -10,44 +10,22 @@
 #include <optional>
 
 
-class TypeBase;
 class TypeChildInfo;
+class IType;
 
 class IScope {
 public:
+    friend class SymbolBackend;
     typedef std::shared_ptr<IScope> p;
     virtual QString scopeName() = 0;
     virtual p parentScope() = 0;
     virtual QString fullyQualifiedScopeName() = 0;
-};
-
-class TypeScopeBase : public IScope {
-public:
-    virtual QString fullyQualifiedScopeName() override {
-        auto _parentScope = parentScope();
-        QString ret;
-        while (_parentScope.get() != nullptr) {
-            ret += _parentScope->scopeName();
-            ret += "::";
-            _parentScope = _parentScope->parentScope();
-        }
-        ret += scopeName();
-        return ret;
-    }
-};
-
-class TypeScopeNamespace : public TypeScopeBase, public std::enable_shared_from_this<TypeScopeNamespace> {
-public:
-    typedef std::shared_ptr<TypeScopeNamespace> p;
-    TypeScopeNamespace(QString name) : m_parentScope(nullptr), m_namespaceName(name) {}
-    TypeScopeNamespace(QString name, p parentScope) : m_parentScope(parentScope), m_namespaceName(name) {}
-
-    virtual QString scopeName() { return m_namespaceName; }
-    virtual IScope::p parentScope() { return m_parentScope; }
+    virtual std::shared_ptr<IType> getType(QString typeName) = 0;
+    virtual std::shared_ptr<IScope> getSubScope(QString scopeName) = 0;
 
 private:
-    QString m_namespaceName;
-    IScope::p m_parentScope;
+    virtual void addType(std::shared_ptr<IType> type) = 0;
+    virtual void addSubScope(std::shared_ptr<IScope> scope) = 0;
 };
 
 class IType {
@@ -103,6 +81,58 @@ public:
     typedef std::shared_ptr<IType> p;
 };
 
+class TypeScopeBase : public IScope {
+public:
+    friend class SymbolBackend;
+    virtual QString fullyQualifiedScopeName() override {
+        auto _parentScope = parentScope();
+        QString ret;
+        while (_parentScope.get() != nullptr) {
+            if (_parentScope->scopeName().isEmpty())
+                continue; // Only Root namespace has an empty name
+            ret += _parentScope->scopeName();
+            ret += "::";
+            _parentScope = _parentScope->parentScope();
+        }
+        ret += scopeName();
+        return ret;
+    }
+    virtual std::shared_ptr<IType> getType(QString typeName) override {
+        if (auto type = m_types.find(typeName); type != m_types.end()) {
+            return type.value();
+        }
+        return nullptr;
+    }
+    virtual std::shared_ptr<IScope> getSubScope(QString scopeName) override {
+        if (auto scope = m_subScopes.find(scopeName); scope != m_subScopes.end()) {
+            return scope.value();
+        }
+        return nullptr;
+    }
+
+protected:
+    virtual void addType(std::shared_ptr<IType> type) override { m_types[type->displayName()] = type; }
+    virtual void addSubScope(std::shared_ptr<IScope> scope) override { m_subScopes[scope->scopeName()] = scope; }
+
+    QHash<QString, std::shared_ptr<IType>> m_types;
+    QHash<QString, std::shared_ptr<IScope>> m_subScopes;
+};
+
+class TypeScopeNamespace : public TypeScopeBase, public std::enable_shared_from_this<TypeScopeNamespace> {
+public:
+    friend class SymbolBackend;
+    typedef std::shared_ptr<TypeScopeNamespace> p;
+    TypeScopeNamespace(QString name) : m_parentScope(nullptr), m_namespaceName(name) {}
+    TypeScopeNamespace(QString name, p parentScope) : m_parentScope(parentScope), m_namespaceName(name) {}
+
+    virtual QString scopeName() { return m_namespaceName; }
+    virtual IScope::p parentScope() { return m_parentScope; }
+
+private:
+    QString m_namespaceName;
+    IScope::p m_parentScope;
+};
+
 class TypeBase : public IType, public std::enable_shared_from_this<TypeBase> {
 public:
     virtual Kind kind() override { return m_kind; }
@@ -110,8 +140,11 @@ public:
         auto parentScope = m_parentScope;
         QString ret;
         while (parentScope.get() != nullptr) {
+            if (parentScope->scopeName().isEmpty())
+                continue; // Only Root namespace has an empty name
             ret += parentScope->scopeName();
             ret += "::";
+            parentScope = parentScope->parentScope();
         }
         ret += displayName();
         return ret;
@@ -126,7 +159,7 @@ protected:
 };
 
 struct TypeChildInfo {
-    typedef uint32_t offset_t;
+    typedef uint64_t offset_t;
     enum Flags {
         NoFlags = 0,
         FromInheritance = 1,           ///< This member is synthesized from inherited subclass

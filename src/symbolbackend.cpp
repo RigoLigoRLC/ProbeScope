@@ -17,6 +17,9 @@ SymbolBackend::SymbolBackend(QObject *parent) : QObject(parent) {
 
     // Prepare internal types
     createInternalTypes();
+
+    // Create Root Namespace
+    m_rootNamespace = std::make_shared<TypeScopeNamespace>(QString(), nullptr);
 }
 
 SymbolBackend::~SymbolBackend() {
@@ -61,8 +64,10 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         }
         m_cus.clear();
         m_typeMap.clear();
+        m_scopeMap.clear();
         m_cuOffsetMap.clear();
         m_qualifiedSourceFiles.clear();
+        m_rootNamespace = std::make_shared<TypeScopeNamespace>(QString(), nullptr);
         createInternalTypes();
 
         // Discard previous file
@@ -246,12 +251,60 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
     m_progressDialog.setLabelText(tr("Generating type database..."));
     m_progressDialog.setMaximum(m_resolutionTypeDies.count());
 
+    // Resolve all type DIEs
     foreach (auto die, m_resolutionTypeDies) {
         auto tryDerefResult = derefTypeDie(die);
         if (tryDerefResult.isErr()) {
             qDebug() << "DIE pre-resolution failed for" << die;
         }
+        m_progressDialog.setValue(m_progressDialog.value() + 1);
     }
+
+    // Resolve all namespace hierachy
+    foreach (auto die, m_resolutionNamespaceDies) {
+        if (auto buildResult = buildNamespaceDie(die); buildResult.isErr()) {
+            qDebug() << "Namespace resolution failed for" << die;
+        }
+    }
+
+    // Add root scopes to the root namespace
+    auto rootNs = std::static_pointer_cast<TypeScopeBase>(m_rootNamespace);
+    for (auto i = 0; i < m_cus.size(); i++) {
+        auto &cu = m_cus[i];
+        foreach (auto topDie, cu.TopDies) {
+            if (Dwarf_Half tag; dwarf_tag(topDie, &tag, &m_err) == DW_DLV_OK) {
+                if (tag == DW_TAG_namespace) {
+                    // Get offset of the namespace DIE, to find the corresponding namespace object
+                    Dwarf_Off offset;
+                    if (dwarf_die_CU_offset(topDie, &offset, &m_err) != DW_DLV_OK) {
+                        continue;
+                    }
+                    if (auto nsObj = m_scopeMap.find({i, offset}); nsObj != m_scopeMap.end()) {
+                        // Add to root namespace
+                        rootNs->addSubScope(nsObj.value());
+                        // Correct subscope parent
+                        auto ns = std::dynamic_pointer_cast<TypeScopeNamespace>(*nsObj);
+                        Q_ASSERT(ns);
+                        ns->m_parentScope = rootNs;
+                    }
+                }
+            }
+        }
+    }
+
+    // Put all orphan types into root namespace
+    for (auto it = m_typeMap.begin(); it != m_typeMap.end(); it++) {
+        if (it.key().cuIndex < 0) {
+            continue;
+        }
+        if (auto typeObj = std::dynamic_pointer_cast<TypeBase>(it.value()); typeObj) {
+            rootNs->addType(typeObj);
+        }
+    }
+
+    // Clear resolution-local data
+    m_resolutionTypeDies.clear();
+    m_resolutionNamespaceDies.clear();
 
     m_progressDialog.close();
 
@@ -296,19 +349,6 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         if (dwarf_whatform(addrAttr, &addrAttrForm, &m_err) != DW_DLV_OK) {
             return Err(Error::DwarfApiFailure);
         }
-        // if (dwarf_formexprloc(addrAttr, &exprLen, &exprPtr, &m_err) != DW_DLV_OK) {
-        //     Dwarf_Block *addrBlock;
-        //     if (dwarf_formblock(addrAttr, &addrBlock, &m_err) != DW_DLV_OK) {
-        //         return Err(Error::DwarfApiFailure);
-        //     }
-        //     exprPtr = 0;
-        //     // HACK: Arm compiler uses expressions in block form instead of exprloc for variable addresses
-        //     if (reinterpret_cast<uint8_t *>(addrBlock->bl_data)[0] == DW_OP_addr) {
-        //         memcpy(&exprPtr, reinterpret_cast<uint8_t *>(addrBlock->bl_data) + 1, addrBlock->bl_len - 1);
-        //     } else {
-        //         return Err(Error::DwarfApiFailure);
-        //     }
-        // }
         auto addrAttrResult = DwarfFormConstant(addrAttr);
         if (addrAttrResult.isErr()) {
             qCritical() << "Variable DIE " << DieRef(cuIndex, it.key())
@@ -336,7 +376,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         }
 
         VariableNode node;
-        node.address = (TypeChildInfo::offset_t) exprPtr; // Fix this later
+        node.address = (TypeChildInfo::offset_t) exprPtr;
 
         // Get variable display name
         char *dispName;
@@ -374,7 +414,7 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
         // node.typeSpec = typeSpec;
         // node.typeSpec = derefResult.unwrap();
 
-        // TODO: displayable type name
+
         auto typeObjResult = derefTypeDie(derefResult.unwrap());
         if (typeObjResult.isErr()) {
             node.displayTypeName = tr("<Error Type>");
@@ -885,6 +925,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                         continue;
                     }
                     // Correct children scope
+                    std::static_pointer_cast<TypeScopeBase>(type)->addType(nestedType);
                     nestedType->m_parentScope = type;
                     continue;
                 }
@@ -1121,6 +1162,88 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
     }
     Q_ASSERT(ret.get() != nullptr);
     m_typeMap[typeDie] = ret;
+    return Ok(ret);
+}
+
+Result<TypeScopeNamespace::p, SymbolBackend::Error> SymbolBackend::buildNamespaceDie(SymbolBackend::DieRef nsDie) {
+    TypeScopeNamespace::p ret;
+
+    if (m_cus.size() <= nsDie.cuIndex || !m_cus[nsDie.cuIndex].hasDie(nsDie.dieOffset)) {
+        qCritical() << "buildNamespaceDie: CU:Offset" << nsDie << "not found";
+        return Err(Error::DwarfReferredDieNotFound);
+    }
+
+    // Get namespace name
+    Dwarf_Die die = m_cus[nsDie.cuIndex].die(nsDie.dieOffset);
+    DwarfAttrList attr(m_dwarfDbg, die);
+    if (!attr.has(DW_AT_name)) {
+        qCritical() << "Namespace" << nsDie << "Has no name";
+        return Err(Error::DwarfDieFormatInvalid);
+    } else if (char *namePtr; dwarf_formstring(attr(DW_AT_name), &namePtr, &m_err) != DW_DLV_OK) {
+        qCritical() << "Namespace" << nsDie << "Cannot form name string";
+        return Err(Error::DwarfDieFormatInvalid);
+    } else if (strlen(namePtr) == 0) {
+        qCritical() << "Namespace" << nsDie << "Name is empty";
+        return Err(Error::DwarfDieFormatInvalid);
+    } else {
+        ret = std::make_shared<TypeScopeNamespace>(namePtr);
+    }
+
+    // Iterate through children
+    Dwarf_Die child;
+    if (dwarf_child(die, &child, &m_err) != DW_DLV_OK) {
+        qCritical() << "Namespace" << nsDie << "Has no child";
+        return Err(Error::DwarfDieFormatInvalid);
+    }
+
+    // Cast to TypeScopeBase because this is namespace's base class and is also the friend of SymbolBackend
+    auto base = std::dynamic_pointer_cast<TypeScopeBase>(ret);
+    Q_ASSERT(base);
+
+    do {
+        Dwarf_Half childTag;
+        if (dwarf_tag(child, &childTag, &m_err) != DW_DLV_OK) {
+            qWarning() << "Namespace" << nsDie << "Child" << child << "Cannot get tag";
+            continue;
+        }
+        if (!isANestableType(childTag)) {
+            continue;
+        }
+
+        // Here you might get namespaces, structures/classes/unions
+        DwarfAttrList attr(m_dwarfDbg, child);
+        // Get their CU local offset
+        Dwarf_Off globOffset, localOffset;
+        if (dwarf_die_offsets(child, &globOffset, &localOffset, &m_err) != DW_DLV_OK) {
+            qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot get offset";
+            continue;
+        }
+
+        // For namespaces, resolve them recursively
+        if (childTag == DW_TAG_namespace) {
+            auto resolveResult = buildNamespaceDie({nsDie.cuIndex, localOffset}); // Assume always in same CU
+            if (resolveResult.isErr()) {
+                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve namespace";
+                continue;
+            }
+            // Add sub namespace to current namespace
+            base->addSubScope(resolveResult.unwrap());
+        } else {
+            // Otherwise it must be a TypeStructure
+            if (dieOffsetGlobalToCuBased(globOffset).isErr()) {
+                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot convert to CU local offset";
+                continue;
+            } else if (auto typeResult = resolveTypeDie({nsDie.cuIndex, localOffset}); typeResult.isErr()) {
+                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve type";
+                continue;
+            } else {
+                // Add type to current namespace
+                base->addType(typeResult.unwrap());
+            }
+        }
+    } while (dwarf_siblingof_c(child, &child, &m_err) != DW_DLV_NO_ENTRY);
+
+    m_scopeMap[nsDie] = ret;
     return Ok(ret);
 }
 

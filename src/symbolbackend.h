@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <result.h>
 
+struct ITypePtrBox;
 
 /**
  * @brief SymbolBacked uses GdbContainer under the hood to provide all the necessary symbol information
@@ -242,12 +243,6 @@ private:
         Dwarf_Attribute *m_attrList;
     };
 
-    struct TypeResolutionContext {
-        TypeResolutionContext() = default;
-
-        QSet<DieRef> recursionChain; ///< Used to detect loop dependency
-    };
-
     struct DwarfCuData {
         QString Name;                      ///< CU file name
         QString CompileDir;                ///< Directory in which it was compiled from
@@ -294,6 +289,7 @@ private:
      * @return On success: a pair of <CuIndex, CuLocalOffset>. On failure: Last libdwarf API call result
      */
     Result<QPair<int, Dwarf_Off>, int> anyDeref(Dwarf_Attribute dw_attr, Dwarf_Bool *dw_is_info, Dwarf_Error *dw_err);
+
     /**
      * @brief Get the internal type representation for a type DIE. If the DIE is unresolved, resolution will be
      * attempted internally recursively.
@@ -311,6 +307,8 @@ private:
      * @return On success: TypeBase ptr. On failure: error code.
      */
     Result<IType::p, Error> resolveTypeDie(DieRef typeDie);
+
+    Result<TypeScopeNamespace::p, Error> buildNamespaceDie(DieRef nsDie);
 
     static void writeTypeInfoToVariableNode(VariableNode &node, IType::p type);
     static VariableIconType dwarfTagToIconType(Dwarf_Half tag);
@@ -335,11 +333,13 @@ private:
     Dwarf_Debug m_dwarfDbg;
     QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
     QMap<Dwarf_Off, int> m_cuOffsetMap;       ///< (CuBaseOffset -> CuVectorIndex) mapping
-    QMap<DieRef, IType::p> m_typeMap;         ///< (CuOffset -> TypeBase) mapping, for entire file
+    QMap<DieRef, IType::p> m_typeMap;         ///< (CuOffset -> IType) mapping, for entire file
+    QMap<DieRef, IScope::p> m_scopeMap;       ///< (CuOffset -> IScope) mapping, for entire file
     QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
     Dwarf_Error m_err;
     TypeBase::p m_errorType;
     Dwarf_Half m_machineWordSize; ///< In bytes
+    TypeScopeNamespace::p m_rootNamespace;
 
     QList<DieRef> m_resolutionTypeDies;
     QList<DieRef> m_resolutionNamespaceDies;

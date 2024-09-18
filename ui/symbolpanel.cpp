@@ -229,7 +229,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     QString addressText;
     if (var.address.has_value()) {
         char buf[19];
-        int n = snprintf(buf, sizeof(buf), "0x%08X", var.address.value()); // Good old C formatter is far better
+        int n = snprintf(buf, sizeof(buf), "0x%08llX", var.address.value()); // Good old C formatter is far better
         if (n > sizeof(buf)) {
             addressText = "0x" + QString::number(var.address.value(), 16); // Some one pushed it beyond limits...
         } else {
@@ -244,7 +244,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     subitem->setText(0, var.displayName);
     subitem->setData(0, VariableNameRole, var.displayName);
     subitem->setData(0, VariableLocationRole, VariableLocationDesc{var.address, var.bitOffset, var.bitSize});
-    subitem->setData(0, TypeNameRole, var.displayTypeName);
+    subitem->setData(0, TypeNameRole, var.typeObj->fullyQualifiedName());
     subitem->setData(0, TypeObjectRole, QVariant::fromValue(ITypePtrBox{var.typeObj}));
     subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
     subitem->setData(GeneralCol, IconTypeRole, uint32_t(var.iconType));
