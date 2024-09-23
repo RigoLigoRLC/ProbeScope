@@ -1,6 +1,7 @@
 
 #include "symbolpanel.h"
 #include "delegate/symbolnamedelegate.h"
+#include "eventfilters/firstcolumnfollowresizefilter.h"
 #include "expressionevaluator.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
@@ -19,6 +20,9 @@ SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     // Set props for sorter column
     ui->treeSymbolTree->sortByColumn(SortCol, Qt::AscendingOrder);
     ui->treeSymbolTree->setColumnHidden(SortCol, true);
+    ui->treeSymbolTree->header()->resizeSection(GeneralCol, 300);
+    ui->treeSymbolTree->header()->resizeSection(AddressCol, 150);
+    // ui->treeSymbolTree->header()->installEventFilter(new FirstColumnFollowResizeFilter(this));
 
     // Initialize rich text item delegate
     m_htmlDelegate = new SymbolNameDelegate(this);
