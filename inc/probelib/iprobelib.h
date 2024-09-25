@@ -27,7 +27,7 @@ namespace probelib {
         virtual QVector<IAvailableProbe::p> availableProbes() = 0;
 
         // Connect to a probe
-        virtual Result<IProbeSession, Error> connectToProbe(IAvailableProbe::p probe) = 0;
+        virtual Result<std::unique_ptr<IProbeSession>, Error> connectToProbe(IAvailableProbe::p probe) = 0;
     };
 
     /**

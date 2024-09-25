@@ -1,11 +1,16 @@
 
 add_library(probelib-psprobe SHARED)
 
+# Import libpsprobe
+corrosion_import_crate(MANIFEST_PATH ${CMAKE_SOURCE_DIR}/lib/libpsprobe/Cargo.toml)
+target_include_directories(psprobe INTERFACE ${CMAKE_SOURCE_DIR}/lib/libpsprobe/inc)
+
 FILE(GLOB_RECURSE SOURCES *.cpp)
-qm_configure_target("probelib-psprobe"
+qm_configure_target(probelib-psprobe
     SOURCES ${SOURCES}
     
     LINKS_PRIVATE
+        psprobe # Rust part
         probelib-includes
     
     QT_LINKS Core

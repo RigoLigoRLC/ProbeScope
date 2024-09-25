@@ -25,10 +25,6 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 qm_find_qt(Core Widgets Svg LinguistTools)
 
-# Import libpsprobe
-corrosion_import_crate(MANIFEST_PATH lib/libpsprobe/Cargo.toml)
-target_include_directories(psprobe INTERFACE lib/libpsprobe/inc)
-
 # Import QTermWidget
 set(BUILD_STATIC ON)
 set(BUILD_EXAMPLES OFF)
@@ -72,7 +68,6 @@ add_executable(probescope)
 qm_configure_target(probescope
     SOURCES ${SOURCES}
     LINKS_PRIVATE
-        psprobe
         qtermwidget
         ads::qt5advanceddocking
         SingleApplication::SingleApplication
