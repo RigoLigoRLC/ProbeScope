@@ -48,6 +48,9 @@ include(cmake/ImportLibdwarf.cmake)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 add_subdirectory(lib/WatchExprParser)
 
+# Build the internal probelibs
+add_subdirectory(plugins)
+
 # Add include directories
 include_directories(src ui)
 
@@ -79,6 +82,7 @@ qm_configure_target(probescope
 
     INCLUDE_PRIVATE
         inc
+        inc/probelib-interface
         src/qtermwidget
 
     QT_LINKS Core Widgets Svg
