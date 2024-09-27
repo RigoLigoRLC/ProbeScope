@@ -27,21 +27,20 @@ namespace probelib {
         virtual QVector<IAvailableProbe::p> availableProbes() = 0;
 
         // Connect to a probe
-        virtual Result<std::unique_ptr<IProbeSession>, Error> connectToProbe(IAvailableProbe::p probe) = 0;
+        virtual Result<IProbeSession *, Error> connectToProbe(IAvailableProbe::p probe) = 0;
     };
 
     /**
-     * @brief An unique pointer to IProbeSession is returned when trying to connect to a probe.
+     * @brief An pointer to IProbeSession is returned when trying to connect to a probe.
      * As a rule, only one IProbeSession can exist at a time, for each ProbeLib. Your ProbeLib implementation should be
      * designed in a way so that when an connection is active, no more connections can be made until the current
-     * connection is terminated. ProbeScope will drop the IProbeSession unique pointer when the connection should be
+     * connection is terminated. ProbeScope will drop the IProbeSession pointer when the connection should be
      * terminated, and connection cleanup should be done in the destructor of your IProbeSession implementation.
      *
      */
     class IProbeSession {
     public:
         virtual ~IProbeSession() = default;
-        using p = std::unique_ptr<IProbeSession>;
 
         // Core selection API
         virtual Result<QVector<size_t>, Error> listCores() = 0;
@@ -51,10 +50,12 @@ namespace probelib {
         virtual ReadResult readMemory8(size_t address, size_t count) = 0;
         virtual ReadResult readMemory16(size_t address, size_t count) = 0;
         virtual ReadResult readMemory32(size_t address, size_t count) = 0;
+        virtual ReadResult readMemory64(size_t address, size_t count) = 0;
 
         virtual Result<void, Error> writeMemory8(size_t address, const QByteArray &data) = 0;
         virtual Result<void, Error> writeMemory16(size_t address, const QByteArray &data) = 0;
         virtual Result<void, Error> writeMemory32(size_t address, const QByteArray &data) = 0;
+        virtual Result<void, Error> writeMemory64(size_t address, const QByteArray &data) = 0;
 
         // Scatter-Gather Read
         virtual Result<void, Error> setReadScatterGatherList(const QVector<ScatterGatherEntry> &list) = 0;

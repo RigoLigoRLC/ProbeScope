@@ -17,6 +17,8 @@ private slots:
     void sltOpenSymbolFile();
     void sltReloadSymbolFile();
 
+    void sltModifyConnection();
+
 private:
     Ui::ProbeScopeWindow *ui;
 
@@ -26,6 +28,10 @@ private:
 
     // Panel components
     SymbolPanel *m_symbolPanel;
+
+    // Status bar
+    QLabel *m_connectionLabel;
+    QPushButton *m_modifyConnectionButton;
 
     // Backend
     WorkspaceModel *m_workspace;

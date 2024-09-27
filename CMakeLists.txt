@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.19)
 project(probescope)
 
 # Add AddressSanitizer on MSVC Debug
-if (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+if (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message("MSVC AddressSanitizer enabled")
     add_compile_options(/fsanitize=address)
 endif()
@@ -32,6 +32,11 @@ add_subdirectory(lib/libqtermwidget)
 
 # Import Qt ADS
 add_subdirectory(lib/Qt-Advanced-Docking-System)
+set_target_properties(qt5advanceddocking PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
+)
 
 # Import Qt Single Application library
 set(QAPPLICATION_CLASS QApplication CACHE STRING "Inheritance class for SingleApplication")

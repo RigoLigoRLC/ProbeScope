@@ -1,5 +1,6 @@
 
 #include "workspacemodel.h"
+#include "probelibhost.h"
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
@@ -10,7 +11,7 @@
 #include <QStandardPaths>
 #include <cstdint>
 #include <limits>
-#include <qtreewidget.h>
+
 
 // #define BLOCK_ALLOC_DEBUG_MSG
 
@@ -75,7 +76,11 @@ WorkspaceModel::WorkspaceModel(QObject *parent) : QObject(parent) {
         exit(1);
     }
 
+    // Create symbol backend.
     m_symbolBackend = new SymbolBackend(this);
+
+    // Create probe lib host.
+    m_probeLibHost = new ProbeLibHost(this);
 }
 
 WorkspaceModel::~WorkspaceModel() {}

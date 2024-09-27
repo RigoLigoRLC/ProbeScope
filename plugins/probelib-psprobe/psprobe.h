@@ -24,7 +24,7 @@ namespace probelib {
         virtual QVector<IAvailableProbe::p> availableProbes() override;
 
         // Connect to a probe
-        virtual Result<IProbeSession::p, Error> connectToProbe(IAvailableProbe::p probe) override;
+        virtual Result<IProbeSession *, Error> connectToProbe(IAvailableProbe::p probe) override;
 
     private:
         QVector<std::shared_ptr<PSProbeAvailableProbe>> m_probesFetched;

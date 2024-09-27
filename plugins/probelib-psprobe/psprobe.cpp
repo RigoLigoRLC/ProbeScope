@@ -13,7 +13,7 @@ namespace probelib {
         psprobe_probe_list_get(&probes, &count);
         for (size_t i = 0; i < count; i++) {
             void *probe;
-            psprobe_probe_list_get_probe(probes, &i, &probe);
+            psprobe_probe_list_get_probe(probes, i, &probe);
             m_probesFetched.append(std::make_shared<PSProbeAvailableProbe>(probe));
         }
         psprobe_probe_list_destroy(probes);
@@ -26,7 +26,7 @@ namespace probelib {
         return ret;
     }
 
-    Result<IProbeSession::p, Error> PSProbe::connectToProbe(IAvailableProbe::p probe) {
+    Result<IProbeSession *, Error> PSProbe::connectToProbe(IAvailableProbe::p probe) {
         return Err(Error{"Not Implemented", true, ErrorClass::BeginConnectionFailure});
     }
 }

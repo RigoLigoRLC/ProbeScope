@@ -1,5 +1,7 @@
 
 #include "probescopewindow.h"
+#include "probelibhost.h"
+#include "selectprobedialog.h"
 #include "symbolbackend.h"
 #include "utils.h"
 #include "workspacemodel.h"
@@ -7,7 +9,6 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QSettings>
-
 
 
 ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
@@ -30,12 +31,29 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
     // Place dockable panels to dock manager
     m_dockMgr->addDockWidget(ads::LeftDockWidgetArea, m_dockSymbolPanel);
 
+    // Set up status bar
+    // Use a widget to wrap around it to avoid vertical bars
+    auto connectionWid = new QWidget();
+    auto connectionLay = new QHBoxLayout();
+    m_connectionLabel = new QLabel(tr("Not connected"));
+    m_connectionLabel->setFixedWidth(250);
+    m_modifyConnectionButton = new QPushButton(tr("..."));
+    m_modifyConnectionButton->setFixedWidth(20);
+    connectionLay->setContentsMargins(0, 0, 0, 0);
+    connectionLay->addWidget(m_connectionLabel);
+    connectionLay->addWidget(m_modifyConnectionButton);
+    connectionWid->setLayout(connectionLay);
+    connectionWid->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    ui->statusbar->addWidget(connectionWid);
+
     // Initialize workspace
     m_workspace = new WorkspaceModel(this);
 
     m_symbolPanel->setSymbolBackend(m_workspace->getSymbolBackend());
 
     // Connect all the signals
+    connect(m_modifyConnectionButton, &QPushButton::clicked, this, &ProbeScopeWindow::sltModifyConnection);
+
     connect(m_symbolPanel->ui->btnOpenSymbolFile, &QPushButton::clicked, this, &ProbeScopeWindow::sltOpenSymbolFile);
     connect(m_symbolPanel->ui->btnReloadSymbolFile, &QPushButton::clicked, this,
             &ProbeScopeWindow::sltReloadSymbolFile);
@@ -83,3 +101,31 @@ void ProbeScopeWindow::sltOpenSymbolFile() {
 }
 
 void ProbeScopeWindow::sltReloadSymbolFile() {}
+
+void ProbeScopeWindow::sltModifyConnection() {
+    // NOTE: MUST ensure that acquisition is not running
+    SelectProbeDialog dialog(this);
+
+    auto probeLibHost = m_workspace->getProbeLibHost();
+    if (probeLibHost->probeLibs().isEmpty()) {
+        QMessageBox::critical(this, tr("No probe libraries found"),
+                              tr("No probe libraries found.\n"
+                                 "ProbeScope is supposed to ship with a default probe library.\n"
+                                 "Reinstalling ProbeScope may solve this issue."));
+        return;
+    }
+
+    if (dialog.execWithState(probeLibHost->probeLibs(), probeLibHost->currentProbeLib(),
+                             probeLibHost->currentProbe())) {
+        auto probeLib = dialog.selectedProbeLib();
+        auto probe = dialog.selectedProbe();
+
+        auto result = probeLibHost->connect(probeLib, probe);
+        if (result.isErr()) {
+            QMessageBox::critical(this, tr("Failed to connect to probe"), result.unwrapErr());
+            m_connectionLabel->setText(tr("Not connected"));
+        } else {
+            m_connectionLabel->setText(tr("Connected to %1").arg(probe->name()));
+        }
+    }
+}
