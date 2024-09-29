@@ -16,6 +16,8 @@ int main(int argc, char **argv) {
     app.setOrganizationDomain("rigoligo.cc");
     app.setApplicationName("ProbeScope");
 
+    QIcon::setThemeName("light"); // TODO: Make this configurable
+
 
 #ifdef Q_OS_WIN
     // Workaround for Qt5 font issue

@@ -1,11 +1,12 @@
 <RCC>
     <qresource prefix="/">
-        <file>icons/blank_file.svg</file>
-        <file>icons/structure.svg</file>
-        <file>icons/trivial_variable_floating_point.svg</file>
-        <file>icons/trivial_variable_integer.svg</file>
-        <file>icons/trivial_variable_trivial_pointer.svg</file>
-        <file>icons/trivial_variable_unsupported.svg</file>
-        <file>icons/trivial_variable_array.svg</file>
+        <file>icons/light/index.theme</file>
+        <file>icons/light/symbolpanel/variablepanel-blank-file.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-structure.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-floating-point.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-integer.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-pointer.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-unsupported.svg</file>
+        <file>icons/light/symbolpanel/variablepanel-array.svg</file>
     </qresource>
 </RCC>

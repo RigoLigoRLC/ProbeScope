@@ -54,7 +54,7 @@ bool SymbolPanel::buildRootFiles(SymbolBackend *const symbolBackend) {
     foreach (auto src, result.unwrap()) {
         auto *fileItem = new QTreeWidgetItem;
         fileItem->setText(GeneralCol, src.path);
-        fileItem->setIcon(GeneralCol, QIcon(":/icons/blank_file.svg"));
+        fileItem->setIcon(GeneralCol, QIcon::fromTheme("variablepanel-blank-file"));
         fileItem->setData(GeneralCol, NodeKindRole, uint32_t(NodeKind::CompileUnit));
         fileItem->setData(GeneralCol, CompileUnitIndexRole, src.cuIndex);
         fileItem->setText(SortCol, QString::number(index++));
@@ -260,20 +260,22 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     switch (var.iconType) {
         case SymbolBackend::VariableIconType::Boolean:
         case SymbolBackend::VariableIconType::Integer:
-            subitem->setIcon(0, QIcon(":/icons/trivial_variable_integer.svg"));
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-integer"));
             break;
         case SymbolBackend::VariableIconType::FloatingPoint:
-            subitem->setIcon(0, QIcon(":/icons/trivial_variable_floating_point.svg"));
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-floating-point"));
             break;
-        case SymbolBackend::VariableIconType::Structure: subitem->setIcon(0, QIcon(":/icons/structure.svg")); break;
+        case SymbolBackend::VariableIconType::Structure:
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-structure"));
+            break;
         case SymbolBackend::VariableIconType::Pointer:
-            subitem->setIcon(0, QIcon(":/icons/trivial_variable_trivial_pointer.svg"));
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-pointer"));
             break;
         case SymbolBackend::VariableIconType::Array:
-            subitem->setIcon(0, QIcon(":/icons/trivial_variable_array.svg"));
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-array"));
             break;
         case SymbolBackend::VariableIconType::Unknown:
-            subitem->setIcon(0, QIcon(":/icons/trivial_variable_unsupported.svg"));
+            subitem->setIcon(0, QIcon::fromTheme("variablepanel-unsupported"));
             break;
     }
 

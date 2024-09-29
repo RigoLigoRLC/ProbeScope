@@ -1,0 +1,9 @@
+[Icon Theme]
+Name=ProbeScope Light Icons
+
+[symbolpanel]
+Context=MimeTypes
+Type=Scalable
+Size=16
+MinSize=1
+MaxSize=256
