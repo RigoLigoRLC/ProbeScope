@@ -62,3 +62,6 @@ out/
 
 .DS_Store
 .vscode/launch.json
+
+# Author's local deployment directory
+_DEPLOY/
