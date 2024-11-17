@@ -202,14 +202,27 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         int depth = 0, cuIdx = m_cus.size() - 1;
         std::function<void(Dwarf_Die)> recurseGetDies = [&](Dwarf_Die rootDie) {
             Dwarf_Die childDie = 0;
-            Dwarf_Die currentDie = rootDie;
+            Dwarf_Die currentDie = nullptr;
             Dwarf_Off offset;
 
+            // Obtain first children of the root DIE. Specifically if root DIE is set to nullptr, it will start from the
+            // first top DIE
+            if (rootDie) {
+                if (Dwarf_Die firstChild = 0; dwarf_child(rootDie, &firstChild, &m_err) == DW_DLV_OK) {
+                    currentDie = firstChild;
+                } else {
+                    qCritical() << "Failed to get first child of DIE" << rootDie;
+                    return;
+                }
+            } else {
+                currentDie = firstTop;
+            }
+
             // Cache current DIE
-            int dwRet = dwarf_die_CU_offset(rootDie, &offset, &m_err);
+            int dwRet = dwarf_die_CU_offset(currentDie, &offset, &m_err);
             Q_ASSERT(dwRet == DW_DLV_OK);
             // cuData.Dies[offset] = rootDie;
-            addDie(cuIdx, offset, rootDie);
+            addDie(cuIdx, offset, currentDie, rootDie);
 
             // Loop on siblings
             forever {
@@ -220,7 +233,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                 Q_ASSERT(dwRet != DW_DLV_ERROR);
                 if (dwRet == DW_DLV_OK) {
                     // If it does, try recursively on child
-                    recurseGetDies(childDie);
+                    recurseGetDies(currentDie);
                     firstTop = 0;
                 }
 
@@ -236,11 +249,11 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                 int dwRet = dwarf_die_CU_offset(currentDie, &offset, &m_err);
                 Q_ASSERT(dwRet == DW_DLV_OK);
                 // cuData.Dies[offset] = currentDie;
-                addDie(cuIdx, offset, currentDie);
+                addDie(cuIdx, offset, currentDie, rootDie);
             }
         };
 
-        recurseGetDies(firstTop);
+        recurseGetDies(nullptr);
 
         // Add as a valid CU for returning
         if (isCuQualifiedSourceFile(cuData)) {
@@ -464,7 +477,7 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
 
 /***************************************** INTERNAL UTILS *****************************************/
 
-void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die) {
+void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, Dwarf_Die parentDie) {
     Dwarf_Half tag;
 
     if (dwarf_tag(die, &tag, &m_err) == DW_DLV_OK) {

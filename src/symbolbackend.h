@@ -264,7 +264,7 @@ private:
         QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
     };
 
-    void addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die);
+    void addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, Dwarf_Die parentDie);
 
     /**
      * @brief Create the primitive types, unsupported types' representation in m_typeMap.
