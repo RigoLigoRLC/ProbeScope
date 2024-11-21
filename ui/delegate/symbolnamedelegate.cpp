@@ -14,12 +14,19 @@ void SymbolNameDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
     painter->drawLine(options.rect.topRight(), options.rect.bottomRight());
 
     options.text = "";
+#ifdef Q_OS_WIN
+    // Qt5 internally gives icons a 2 pixel padding by padding the iconRect (qwindowsvistastyle.cpp L2021)
+    // But when QIcon draws Scalable Icons they fucked it up and forgot to preverse aspect ratio
+    // We work around it by eliminating the padding
+    options.decorationSize.rwidth() -= 4;
+#endif
     options.widget->style()->drawControl(QStyle::CE_ItemViewItem, &options, painter, option.widget);
 
     // shift text right to make icon visible
-    QSize iconSize = options.icon.actualSize(options.rect.size());
-    QRect clip(0, 0, options.rect.width() - iconSize.width(), options.rect.height());
-    painter->translate(options.rect.left() + iconSize.width(), options.rect.top());
+    constexpr int hPadding = 4;
+    QSize iconSize = options.icon.actualSize(options.decorationSize);
+    QRect clip(0, 0, options.rect.width() - iconSize.width() - hPadding, options.rect.height());
+    painter->translate(options.rect.left() + iconSize.width() + hPadding, options.rect.top());
 
     painter->setClipRect(clip);
 
