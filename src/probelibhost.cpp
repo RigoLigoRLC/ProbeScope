@@ -28,7 +28,7 @@ void ProbeLibHost::scanProbeLibs() {
 }
 
 
-Result<void, QString> ProbeLibHost::connect(IProbeLib *probeLib, IAvailableProbe::p probe) {
+Result<void, QString> ProbeLibHost::selectProbe(IProbeLib *probeLib, IAvailableProbe::p probe) {
     if (!probeLib) {
         return Err(tr("Invalid probe library"));
     }
@@ -37,16 +37,61 @@ Result<void, QString> ProbeLibHost::connect(IProbeLib *probeLib, IAvailableProbe
         return Err(tr("Invalid probe"));
     }
 
-    if (auto connectResult = probeLib->connectToProbe(probe); connectResult.isErr()) {
-        return Err(tr("Failed to connect to probe: %1").arg(connectResult.unwrapErr().message));
-    } else {
-        // A new connection must be established when previous one is disconnected
-        Q_ASSERT(!m_probeSession.has_value());
-        m_probeSession = std::unique_ptr<IProbeSession>(connectResult.unwrap());
+    if (m_probeSession.has_value()) {
+        return Err(tr("A probe session is already active"));
+    }
 
-        // Save probe info
+    if (auto selectResult = probeLib->selectProbe(probe); selectResult.isErr()) {
+        return Err(tr("Failed to select probe: %1").arg(selectResult.unwrapErr().message));
+    } else {
+        // Save the choice for later use
         m_currentProbeLib = probeLib;
         m_currentProbe = probe;
+
+        // Clear states
+        m_deviceCategories.clear();
+        m_currentDevice = 0;
+        m_connectionSpeed = 4000; // Default to 4MHz
+    }
+
+    return Ok();
+}
+
+
+QVector<probelib::DeviceCategory> ProbeLibHost::availableDevices() const {
+    if (!m_currentProbeLib) {
+        return {};
+    }
+
+    return m_currentProbeLib->supportedDevices();
+}
+
+Result<void, QString> ProbeLibHost::selectDevice(size_t deviceID) {
+    // This is not checked
+    m_currentDevice = deviceID;
+    return Ok();
+}
+
+Result<void, QString> ProbeLibHost::connect() {
+    if (!m_currentProbeLib) {
+        return Err(tr("No probe library selected"));
+    }
+
+    if (!m_currentProbe) {
+        return Err(tr("No probe selected"));
+    }
+
+    if (m_probeSession.has_value()) {
+        return Err(tr("A probe session is already active"));
+    }
+
+    // Prepare connection
+    m_currentProbeLib->setConnectionSpeed(m_connectionSpeed);
+
+    if (auto connectResult = m_currentProbeLib->connect(m_currentDevice); connectResult.isErr()) {
+        return Err(tr("Failed to connect: %1").arg(connectResult.unwrapErr().message));
+    } else {
+        m_probeSession = std::unique_ptr<IProbeSession>(connectResult.unwrap());
     }
 
     return Ok();

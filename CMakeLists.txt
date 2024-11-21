@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.19)
 project(probescope)
 
 # Add AddressSanitizer on MSVC Debug
-if (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
+if (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     message("MSVC AddressSanitizer enabled")
     add_compile_options(/fsanitize=address)
 endif()

@@ -5,6 +5,7 @@
 #include "result_hack.h"
 #include <QObject>
 #include <memory>
+#include <tuple>
 
 
 namespace probelib {
@@ -48,5 +49,26 @@ namespace probelib {
     struct ScatterGatherEntry {
         size_t address;
         size_t count;
+    };
+
+    /**
+     * @brief This is the interface used to report what kind of devices (MCU SKUs, for example) to ProbeScope.
+     * A category will be displayed as a tree node and devices belonging to it will be children.
+     * Each device will have an ID that ProbeScope will use to select the device.
+     */
+    struct DeviceCategory {
+        QString name;
+        QVector<std::tuple<size_t, QString>> devices; ///< ID, Device name
+    };
+
+    /**
+     * @brief This is the structure to return when ProbeScope asks ProbeLib for a list of available probes.
+     * coreId is the key to index into ProbeLib's internal list of cores; and coreDescription is the human-readable
+     * description of the core, and it can be core "name" (like "Master Core"), microarchitecture (like "Cortex-M4"),
+     * or anything human readable to distinguish between cores.
+     */
+    struct CoreDescriptor {
+        size_t coreId;
+        QString coreDescription;
     };
 }

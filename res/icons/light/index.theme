@@ -4,6 +4,13 @@ Name=ProbeScope Light Icons
 [symbolpanel]
 Context=MimeTypes
 Type=Scalable
-Size=16
+Size=24
+MinSize=1
+MaxSize=256
+
+[status]
+Context=status
+Type=Scalable
+Size=24
 MinSize=1
 MaxSize=256

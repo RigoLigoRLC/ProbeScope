@@ -39,9 +39,12 @@ bool SelectProbeDialog::execWithState(QVector<probelib::IProbeLib *> availablePr
     auto selectedProbeLib = currentProbeLib ? currentProbeLib : availableProbeLibs.first();
     selectProbeLib(selectedProbeLib);
 
-    exec();
+    auto result = exec();
 
-    return false;
+    if (!result)
+        return false;
+
+    return true;
 }
 
 void SelectProbeDialog::selectProbeLib(probelib::IProbeLib *selectedProbeLib) {
@@ -66,7 +69,7 @@ void SelectProbeDialog::scanProbes(IProbeLib *probeLib, IAvailableProbe::p curre
         auto serial = probe->serialNumber();
         // Mark a probe "selected" when name and serial number both matched
         if (currentProbe && name == currentProbe->name() && serial == currentProbe->serialNumber()) {
-            name = tr("%1 (Connected)").arg(name);
+            name = tr("%1 (Selected)").arg(name);
             ui->listProbes->addItem(name);
             ui->listProbes->setCurrentRow(ui->listProbes->count() - 1);
         } else {
@@ -80,8 +83,18 @@ void SelectProbeDialog::scanProbes(IProbeLib *probeLib, IAvailableProbe::p curre
 void SelectProbeDialog::on_cmbProbeLib_currentIndexChanged(int index) {
     selectProbeLib(m_availableProbeLibs[index]);
 }
+
 void SelectProbeDialog::on_btnRescan_clicked() {
     ui->listProbes->clear();
     QApplication::processEvents(); // Let user see we deleted all items
     scanProbes(m_selectedProbeLib, m_currentProbe);
+}
+
+void SelectProbeDialog::on_btnSelect_clicked() {
+    m_selectedProbe = m_availableProbes[ui->listProbes->currentRow()];
+    done(1);
+}
+
+void SelectProbeDialog::on_btnClose_clicked() {
+    done(0);
 }

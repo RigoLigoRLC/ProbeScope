@@ -8,5 +8,7 @@
         <file>icons/light/symbolpanel/variablepanel-pointer.svg</file>
         <file>icons/light/symbolpanel/variablepanel-unsupported.svg</file>
         <file>icons/light/symbolpanel/variablepanel-array.svg</file>
+        <file>icons/light/status/connection-connected.svg</file>
+        <file>icons/light/status/connection-unconnected.svg</file>
     </qresource>
 </RCC>

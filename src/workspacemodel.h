@@ -60,6 +60,11 @@ public:
     Result<void, SymbolBackend::Error> loadSymbolFile(QString path);
 
     /**
+     * @brief Returns path of symbol file. Returns empty string when no file was loaded or last symbol file load failed.
+     */
+    QString getSymbolFilePath() const { return m_symbolBackend->getSymbolFilePath().unwrapOr(QString()); }
+
+    /**
      * @brief Get the Symbol Backend object, when the UI part appropriately needs it
      * @return SymbolBackend const*
      */

@@ -1,4 +1,9 @@
 
+/**
+ * @brief probelib::IProbeLib Interface Definition
+ * This is interface version 1 (under development).
+ */
+
 #pragma once
 
 #include "misc.h"
@@ -25,9 +30,20 @@ namespace probelib {
 
         // List of available probes
         virtual QVector<IAvailableProbe::p> availableProbes() = 0;
+        /// @brief Select a probe from the list of available probes.
+        virtual Result<void, Error> selectProbe(IAvailableProbe::p probe) = 0;
 
-        // Connect to a probe
-        virtual Result<IProbeSession *, Error> connectToProbe(IAvailableProbe::p probe) = 0;
+        // List of supported devices
+        virtual const QVector<DeviceCategory> supportedDevices() = 0;
+
+        // Connection
+        /// @brief Sets the connection speed for the probe. ProbeScope will call it only once before calling connect().
+        /// @return Should return actual connection speed that the probe decided it will use.
+        virtual Result<uint32_t, Error> setConnectionSpeed(uint32_t speed) = 0;
+        /// @brief Should return the connection speed that the probe decided it will use.
+        virtual Result<uint32_t, Error> connectionSpeed() = 0;
+        /// @brief Connect to a device with the previously selected probe.
+        virtual Result<IProbeSession *, Error> connect(size_t deviceId) = 0;
     };
 
     /**
@@ -43,7 +59,7 @@ namespace probelib {
         virtual ~IProbeSession() = default;
 
         // Core selection API
-        virtual Result<QVector<size_t>, Error> listCores() = 0;
+        virtual Result<QVector<CoreDescriptor>, Error> listCores() = 0;
         virtual Result<void, Error> selectCore(size_t core) = 0;
 
         // Simple Burst Read/Write
