@@ -11,8 +11,12 @@
 #include <QProgressDialog>
 #include <QString>
 #include <QTimer>
+#include <optional>
 #include <result.h>
 
+
+template <typename T>
+using Option = std::optional<T>;
 struct ITypePtrBox;
 
 /**
@@ -43,6 +47,7 @@ public:
      */
     enum class Error {
         NoError,
+        NoSymbolLoaded,
         DwarfApiFailure,
         InvalidParameter,
         ExplainTypeFailed,
@@ -99,8 +104,9 @@ public:
         DieRef(QPair<int, Dwarf_Off> pair) : cuIndex(pair.first), dieOffset(pair.second) {}
         DieRef(const DieRef &) = default;
         DieRef &operator=(const DieRef &) = default;
+        bool operator==(const DieRef &r) const { return cuIndex == r.cuIndex && dieOffset == r.dieOffset; }
         friend bool operator<(const DieRef &l, const DieRef &r) {
-            return (l.cuIndex < r.cuIndex) || (l.dieOffset < r.dieOffset);
+            return l.cuIndex < r.cuIndex || (l.cuIndex == r.cuIndex && l.dieOffset < r.dieOffset);
         }
         operator QVariant() { return QVariant::fromValue(*this); }
         int cuIndex;
@@ -153,23 +159,45 @@ public:
     Result<void, Error> switchSymbolFile(QString symbolFileFullPath);
 
     /**
+     * @brief Get the path of symbol file.
+     *
+     * @return On success: symbol file path. On failure: error code.
+     */
+    Result<QString, Error> getSymbolFilePath();
+
+    /**
      * @brief Get the source file list for the current symbol file, with basic information about variables inside
      *
-     * @return Result<QList<SourceFile>, Error>
+     * @return Result<QStringList, Error>
      */
-    Result<QList<SourceFile>, Error> getSourceFileList();
+    Result<QStringList, Error> getSourceFileList();
 
     /**
      * @brief Get root variables of a source file
      *
-     * @param cuIndex Compilation unit index returned with getSourceFileList
+     * @param sourceFilePath Source file path as returned by getSourceFileList
      * @return Result<QList<VariableNode>, Error>
      */
-    Result<QList<VariableNode>, Error> getVariableOfSourceFile(uint32_t cuIndex);
+    Result<QList<VariableNode>, Error> getVariableOfSourceFile(QString sourceFilePath);
 
     // TODO:
     Result<ExpandNodeResult, Error> getVariableChildren(std::optional<TypeChildInfo::offset_t> parentOffset,
                                                         IType::p typeObj);
+
+    /**
+     * @brief Get the root scope of the symbol file.
+     */
+    IScope::p getRootScope() { return std::static_pointer_cast<IScope>(m_rootNamespace); }
+
+    /**
+     * @brief Get a root level scope by its name.
+     */
+    Option<IScope::p> getScope(QString scopeName);
+
+    /**
+     * @brief Get a root level type by its name.
+     */
+    Option<IType::p> getType(QString typeName);
 
 private:
     /**
@@ -250,7 +278,7 @@ private:
         Dwarf_Die CuDie;                   ///< DIE associated with CU
         Dwarf_Off CuDieOff;                ///< CU Base Offset
         QMap<uint64_t, Dwarf_Die> TopDies; ///< Top level DIEs of CU DIE, indexed with offset
-        QMap<uint64_t, Dwarf_Die> Dies;    ///< All DIEs of CU DIE, indexed with offset
+        QMap<uint64_t, Dwarf_Die> Dies;    ///< All (including those unused) DIEs of CU DIE, indexed with offset
         Dwarf_Die die(Dwarf_Off offset) { return Dies.value(offset /* + CuDieOff*/); }
         bool hasDie(Dwarf_Off offset) { return Dies.contains(offset /* + CuDieOff*/); }
 
@@ -261,10 +289,11 @@ private:
             DieRef arraySubrangeElementTypeDie; ///< Exclusively for subranges
             bool expandable;
         };
-        QMap<uint64_t, TypeDieDetails> CachedTypes; ///< DIE offset -> type details cache
+        QMap<uint64_t, TypeDieDetails> CachedTypes;        ///< DIE offset -> type details cache
+        QMap<uint64_t, VariableEntry::p> ExposedVariables; ///< DIE CU-Local offset -> Global/static variable entry
     };
 
-    void addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, Dwarf_Die parentDie);
+    void addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, DieRef parentDieRef);
 
     /**
      * @brief Create the primitive types, unsupported types' representation in m_typeMap.
@@ -276,13 +305,13 @@ private:
     IType::p getPrimitive(IType::Kind kind);
     IType::p getUnsupported();
 
-    bool isCuQualifiedSourceFile(DwarfCuData &cuData);
+    bool isCuQualifiedSourceFile(const DwarfCuData &cuData);
 
     /**
      * @brief Convert global DIE offset to CU-local offset.
      * @return On success: CU index and CU-local offset. On failure: nothing.
      */
-    Result<QPair<int, Dwarf_Off>, std::nullptr_t> dieOffsetGlobalToCuBased(Dwarf_Off globalOffset);
+    Option<QPair<int, Dwarf_Off>> dieOffsetGlobalToCuBased(Dwarf_Off globalOffset);
 
     /**
      * @brief Deref of DW_FORM_ref*, either CU local or global. Args are same as dwarf_formref
@@ -320,6 +349,7 @@ private:
         Dwarf_Unsigned u;
         Dwarf_Signed s;
     };
+    Option<DieRef> DwarfDieToDieRef(Dwarf_Die die); ///< Convert a DIE to a DieRef
     Result<Dwarf_Off, int> DwarfCuDataOffsetFromDie(Dwarf_Die die,
                                                     Dwarf_Error *); ///< Get CU data offset for the owner CU of this DIE
     Result<DwarfFormedInt, int> DwarfFormInt(Dwarf_Attribute attr);
@@ -328,21 +358,26 @@ private:
 private:
     QProgressDialog m_progressDialog;
     QString m_symbolFileFullPath;
+    bool m_loadSucceeded; // Whether the last symbol load has succeeded
 
     // libdwarf context
     Dwarf_Debug m_dwarfDbg;
-    QVector<DwarfCuData> m_cus;               ///< Index in this vec is used to find the specific CU
-    QMap<Dwarf_Off, int> m_cuOffsetMap;       ///< (CuBaseOffset -> CuVectorIndex) mapping
-    QMap<DieRef, IType::p> m_typeMap;         ///< (CuOffset -> IType) mapping, for entire file
-    QMap<DieRef, IScope::p> m_scopeMap;       ///< (CuOffset -> IScope) mapping, for entire file
-    QList<SourceFile> m_qualifiedSourceFiles; ///< Source files considered "useful" in a sense that it contains globals
-    Dwarf_Error m_err;
-    TypeBase::p m_errorType;
-    Dwarf_Half m_machineWordSize; ///< In bytes
-    TypeScopeNamespace::p m_rootNamespace;
+    QVector<DwarfCuData> m_cus;              ///< Index in this vec is used to find the specific CU
+    QMap<Dwarf_Off, int> m_cuOffsetMap;      ///< (CuBaseOffset -> CuVectorIndex) mapping
+    QMap<DieRef, IType::p> m_typeMap;        ///< (CuOffset -> IType) mapping, for entire file
+    QMap<DieRef, IScope::p> m_scopeMap;      ///< (CuOffset -> IScope) mapping, for entire file
+    QMultiHash<QString, int> m_qualifiedCus; ///< (Source Files -> CUs that contain global variables) mapping
+    QStringList m_qualifiedSourceFiles;      ///< Source files that contain global variables
 
+    TypeScopeNamespace::p m_rootNamespace;
+    Dwarf_Error m_err;
+    Dwarf_Half m_machineWordSize; ///< In bytes
+
+    // Resolution-local data
     QList<DieRef> m_resolutionTypeDies;
     QList<DieRef> m_resolutionNamespaceDies;
+    QMap<DieRef, DieRef> m_resolutionNestedVariableCandidates; // (VariableDie, ParentDie) Parent DIE -> IScope
+    QList<DieRef> m_resolutionTopLevelVariableDies;
 };
 
 // Because you cannot put a shared_ptr into QVariant (and you cannot extend shared_ptr to implement that)
@@ -356,3 +391,8 @@ Q_DECLARE_METATYPE(SymbolBackend::DieRef);
 Q_DECLARE_METATYPE(ITypePtrBox);
 QDebug operator<<(QDebug debug, const SymbolBackend::DieRef &c);
 QDebug operator<<(QDebug debug, const std::optional<TypeChildInfo::offset_t> &c);
+
+// Hasher for DieRef
+inline uint qHash(const SymbolBackend::DieRef &key, uint seed = 0) {
+    return qHash(key.cuIndex, seed) ^ qHash(key.dieOffset, seed);
+}

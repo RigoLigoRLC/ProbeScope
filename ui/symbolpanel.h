@@ -51,7 +51,7 @@ public:
         TypeObjectRole,
     };
 
-    enum ColumnKind { GeneralCol, AddressCol, SortCol };
+    enum ColumnKind { GeneralCol, AddressCol, ByteSizeCol, SortCol };
 
     void setSymbolBackend(SymbolBackend *);
 
@@ -79,6 +79,7 @@ private slots:
     void sltItemExpanded(QTreeWidgetItem *item);
     void sltAddWatchEntryClicked();
     void sltTestEvalExprClicked();
+    void sltTestVarStoreClicked();
 
 private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);

@@ -31,6 +31,7 @@ SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     connect(ui->treeSymbolTree, &QTreeWidget::itemExpanded, this, &SymbolPanel::sltItemExpanded);
     connect(ui->btnAddWatchEntry, &QPushButton::clicked, this, &SymbolPanel::sltAddWatchEntryClicked);
     connect(ui->btnEvalExpr, &QPushButton::clicked, this, &SymbolPanel::sltTestEvalExprClicked);
+    connect(ui->btnVarStore, &QPushButton::clicked, this, &SymbolPanel::sltTestVarStoreClicked);
 }
 
 SymbolPanel::~SymbolPanel() {
@@ -53,10 +54,10 @@ bool SymbolPanel::buildRootFiles(SymbolBackend *const symbolBackend) {
     size_t index = 0;
     foreach (auto src, result.unwrap()) {
         auto *fileItem = new QTreeWidgetItem;
-        fileItem->setText(GeneralCol, src.path);
+        fileItem->setText(GeneralCol, src);
         fileItem->setIcon(GeneralCol, QIcon::fromTheme("variablepanel-blank-file"));
         fileItem->setData(GeneralCol, NodeKindRole, uint32_t(NodeKind::CompileUnit));
-        fileItem->setData(GeneralCol, CompileUnitIndexRole, src.cuIndex);
+        // fileItem->setData(GeneralCol, CompileUnitIndexRole, src.cuIndex);
         fileItem->setText(SortCol, QString::number(index++));
         markNeedsPopulate(fileItem);
         ui->treeSymbolTree->addTopLevelItem(fileItem);
@@ -178,10 +179,53 @@ void SymbolPanel::sltTestEvalExprClicked() {
     }
 }
 
-void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
-    auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
+void SymbolPanel::sltTestVarStoreClicked() {
+    auto selected = ui->treeSymbolTree->selectedItems();
+    if (selected.isEmpty() || selected.size() > 1) {
+        return;
+    }
 
-    auto result = m_symbolBackend->getVariableOfSourceFile(cuIndex);
+    auto item = selected[0];
+    auto varName = item->data(0, VariableNameRole).toString();
+    QString queryLog;
+    if (varName.contains("::")) {
+        // Split to scoped queries
+        auto parts = varName.split("::");
+        auto scope = m_symbolBackend->getRootScope();
+        int i;
+        for (i = 0; i < parts.size() - 1; ++i) {
+            scope = scope->getSubScope(parts[i]);
+            queryLog += QStringLiteral("-> %1: %2\n").arg(parts[i]).arg(quintptr(scope.get()));
+            if (!scope) {
+                queryLog += "FAIL";
+                break;
+            }
+        }
+        if (scope) {
+            auto var = scope->getVariable(parts[i]);
+            queryLog += QStringLiteral("-> %1: %2\n").arg(parts[i]).arg(quintptr(var.get()));
+            if (var) {
+                queryLog += "PASS";
+            } else {
+                queryLog += "FAIL";
+            }
+        }
+    } else {
+        // Query in root namespace
+        auto var = m_symbolBackend->getRootScope()->getVariable(varName);
+        if (var) {
+            queryLog += "PASS";
+        } else {
+            queryLog += "FAIL";
+        }
+    }
+    QMessageBox::information(this, "Query result", queryLog);
+}
+
+void SymbolPanel::dynamicPopulateChildForCU(QTreeWidgetItem *item) {
+    // auto cuIndex = item->data(0, CompileUnitIndexRole).toUInt();
+
+    auto result = m_symbolBackend->getVariableOfSourceFile(item->text(GeneralCol));
     if (result.isErr()) {
         return;
     }
@@ -253,6 +297,7 @@ void SymbolPanel::insertNodeByVarnodeInfo(SymbolBackend::VariableNode var, QTree
     subitem->setData(0, NodeKindRole, uint32_t(NodeKind::VariableEntries));
     subitem->setData(GeneralCol, IconTypeRole, uint32_t(var.iconType));
     subitem->setText(AddressCol, addressText);
+    subitem->setText(ByteSizeCol, QString::number(var.typeObj->getSizeof()));
     subitem->setText(SortCol, QString::number(sortColIdx));
     if (var.expandable) {
         markNeedsPopulate(subitem);

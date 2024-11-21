@@ -32,6 +32,7 @@ SymbolBackend::~SymbolBackend() {
 QString SymbolBackend::errorString(SymbolBackend::Error error) {
     switch (error) {
         case Error::NoError: return tr("No error");
+        case Error::NoSymbolLoaded: return tr("No symbol file was loaded yet.");
         case Error::DwarfApiFailure: return tr("A libdwarf API call has failed");
         case Error::ExplainTypeFailed:
             return tr("Action failed because an internal call to explainType was unsuccessful");
@@ -46,6 +47,7 @@ QString SymbolBackend::errorString(SymbolBackend::Error error) {
 
 Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbolFileFullPath) {
     m_symbolFileFullPath = symbolFileFullPath;
+    m_loadSucceeded = false;
 
     // Prepare a progress dialog
     m_progressDialog.setLabelText(tr("Loading symbol file..."));
@@ -66,6 +68,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         m_typeMap.clear();
         m_scopeMap.clear();
         m_cuOffsetMap.clear();
+        m_qualifiedCus.clear();
         m_qualifiedSourceFiles.clear();
         m_rootNamespace = std::make_shared<TypeScopeNamespace>(QString(), nullptr);
         createInternalTypes();
@@ -200,19 +203,23 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         m_cuOffsetMap[cuData.CuDieOff] = m_cus.size() - 1;
         // All DIEs, depth first search
         int depth = 0, cuIdx = m_cus.size() - 1;
-        std::function<void(Dwarf_Die)> recurseGetDies = [&](Dwarf_Die rootDie) {
+        std::function<void(int, Dwarf_Die)> recurseGetDies = [&](int rootDieCu, Dwarf_Die rootDie) {
             Dwarf_Die childDie = 0;
             Dwarf_Die currentDie = nullptr;
             Dwarf_Off offset;
 
             // Obtain first children of the root DIE. Specifically if root DIE is set to nullptr, it will start from the
             // first top DIE
+            Dwarf_Off rootDieCuOff = 0;
             if (rootDie) {
-                if (Dwarf_Die firstChild = 0; dwarf_child(rootDie, &firstChild, &m_err) == DW_DLV_OK) {
-                    currentDie = firstChild;
-                } else {
+                if (Dwarf_Die firstChild = 0; dwarf_child(rootDie, &firstChild, &m_err) != DW_DLV_OK) {
                     qCritical() << "Failed to get first child of DIE" << rootDie;
                     return;
+                } else if (dwarf_die_CU_offset(rootDie, &rootDieCuOff, &m_err) != DW_DLV_OK) {
+                    qCritical() << "Failed to get CU offset of DIE" << rootDie;
+                    return;
+                } else {
+                    currentDie = firstChild;
                 }
             } else {
                 currentDie = firstTop;
@@ -222,8 +229,44 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
             int dwRet = dwarf_die_CU_offset(currentDie, &offset, &m_err);
             Q_ASSERT(dwRet == DW_DLV_OK);
             // cuData.Dies[offset] = rootDie;
-            addDie(cuIdx, offset, currentDie, rootDie);
+            addDie(cuIdx, offset, currentDie, {rootDieCu, rootDieCuOff});
 
+            // Here we intentionally iterate on siblings (but not recursive yet)
+            // Because when we cache DW_TAG_variable in the top level we can know what nested variables they referred to
+            // Otherwise we either have to keep track of parent information of the entire DIE tree, or we risk missing
+            // out some variables
+            for (Dwarf_Die siblingDie = currentDie;;) {
+                // Cache current DIE
+                int dwRet = dwarf_die_CU_offset(siblingDie, &offset, &m_err);
+                Q_ASSERT(dwRet == DW_DLV_OK);
+                // cuData.Dies[offset] = siblingDie;
+                addDie(cuIdx, offset, siblingDie, {rootDieCu, rootDieCuOff});
+
+                // After looking into child, try get sibling of current node
+                dwRet = dwarf_siblingof_b(m_dwarfDbg, siblingDie, true, &siblingDie, &m_err);
+                Q_ASSERT(dwRet != DW_DLV_ERROR);
+                if (dwRet == DW_DLV_NO_ENTRY) {
+                    break;
+                }
+            }
+
+            // Then we do a recursive call on all siblings' children
+            for (Dwarf_Die siblingDie = currentDie;;) {
+                // See if current node has a child
+                dwRet = dwarf_child(siblingDie, &childDie, &m_err);
+                if (dwRet == DW_DLV_OK) {
+                    // If it does, try recursively on child
+                    recurseGetDies(rootDieCu, siblingDie);
+                }
+
+                // After looking into child, try get sibling of current node
+                dwRet = dwarf_siblingof_b(m_dwarfDbg, siblingDie, true, &siblingDie, &m_err);
+                if (dwRet == DW_DLV_NO_ENTRY) {
+                    break;
+                }
+            }
+
+#if 0
             // Loop on siblings
             forever {
                 Dwarf_Die siblingDie = 0;
@@ -233,7 +276,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                 Q_ASSERT(dwRet != DW_DLV_ERROR);
                 if (dwRet == DW_DLV_OK) {
                     // If it does, try recursively on child
-                    recurseGetDies(currentDie);
+                    recurseGetDies(cuIdx, currentDie);
                     firstTop = 0;
                 }
 
@@ -249,16 +292,12 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                 int dwRet = dwarf_die_CU_offset(currentDie, &offset, &m_err);
                 Q_ASSERT(dwRet == DW_DLV_OK);
                 // cuData.Dies[offset] = currentDie;
-                addDie(cuIdx, offset, currentDie, rootDie);
+                addDie(cuIdx, offset, currentDie, {rootDieCu, rootDieCuOff});
             }
+#endif
         };
 
-        recurseGetDies(nullptr);
-
-        // Add as a valid CU for returning
-        if (isCuQualifiedSourceFile(cuData)) {
-            m_qualifiedSourceFiles.append(srcFile);
-        }
+        recurseGetDies(m_cus.count() - 1, nullptr);
     }
 
     m_progressDialog.setLabelText(tr("Generating type database..."));
@@ -277,6 +316,9 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
     foreach (auto die, m_resolutionNamespaceDies) {
         if (auto buildResult = buildNamespaceDie(die); buildResult.isErr()) {
             qDebug() << "Namespace resolution failed for" << die;
+        } else {
+            auto scopePtr = buildResult.unwrap();
+            m_rootNamespace->addSubScope(scopePtr);
         }
     }
 
@@ -305,38 +347,227 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         }
     }
 
+    qDebug() << "<<<<<<<<<<<<<<<<<<<" << m_resolutionNestedVariableCandidates;
+
+    // Resolve all variables
+    std::function<void(DieRef, DieRef, Option<uint64_t>)> resolveVariable = [&](DieRef variableDieRef,
+                                                                                DieRef parentDieRef,
+                                                                                Option<uint64_t> referrerLocation = 0) {
+        auto variableDie = m_cus[variableDieRef.cuIndex].die(variableDieRef.dieOffset);
+        DwarfAttrList attrs(m_dwarfDbg, variableDie);
+
+        // Check if the variable contains a DW_AT_specification, this means it's a reference to a nested variable
+        if (Dwarf_Attribute specAttr; (specAttr = attrs(DW_AT_specification))) {
+            // Take the DieRef of the referred DIE and see if it's a nested variable candidate
+            DieRef specDieRef;
+            if (auto specDieDerefResult = anyDeref(specAttr, nullptr, &m_err); specDieDerefResult.isErr()) {
+                qCritical() << "Failed to dereference specification attribute for variable" << variableDieRef;
+                return;
+            } else {
+                auto specDieDeref = specDieDerefResult.unwrap();
+                specDieRef = specDieDeref;
+                qDebug() << m_resolutionNestedVariableCandidates[DieRef(106, 319)];
+                qDebug() << m_resolutionNestedVariableCandidates[DieRef(106, 614)];
+
+                if (auto cand = m_resolutionNestedVariableCandidates.find(specDieRef);
+                    cand != m_resolutionNestedVariableCandidates.end()) {
+                    // It's a nested variable candidate, resolve it
+                    // HACK: In DWARF, static members don't keep their own location. The referrer variable DIEs do this
+                    // for them. We need to take that address here and pass it in
+                    Dwarf_Ptr exprPtr;
+                    if (Dwarf_Attribute addrAttr = attrs(DW_AT_location); !addrAttr) {
+                        qCritical() << "Variable" << variableDieRef << "has no location attribute";
+                        return;
+                    } else if (Dwarf_Half addrAttrForm; dwarf_whatform(addrAttr, &addrAttrForm, &m_err) != DW_DLV_OK) {
+                        qCritical() << "Failed to get form of location attribute for variable" << variableDieRef;
+                        return;
+                    } else if (auto addrAttrResult = DwarfFormConstant(addrAttr); addrAttrResult.isErr()) {
+                        qCritical() << "Cannot form location constant for variable" << variableDieRef;
+                        return;
+                    } else {
+                        exprPtr = (Dwarf_Ptr *) addrAttrResult.unwrap().u;
+                    }
+
+                    resolveVariable(specDieRef, *cand, uint64_t(exprPtr));
+                }
+            }
+            return;
+        }
+
+        // Get a DIE offset reference to type specifier.
+        // DW_AT_type can refer to a DIE in current CU (DW_FORM_ref_n) or in other CUs(DW_FORM_ref_addr)
+        // So when we're looking for type info we need to search for other CUs when current CU doesn't have it
+        Dwarf_Bool isInfo;
+        IType::p typeObj;
+        if (Dwarf_Attribute typeSpecAttr; !(typeSpecAttr = attrs(DW_AT_type))) {
+            qCritical() << "Variable" << variableDieRef << "has no type specifier";
+            return;
+        } else if (auto derefResult = anyDeref(typeSpecAttr, &isInfo, &m_err); derefResult.isErr()) {
+            qCritical() << "Failed to dereference type specifier for variable" << variableDieRef;
+            return;
+        } else if (auto typeObjResult = derefTypeDie(derefResult.unwrap()); typeObjResult.isErr()) {
+            // This was originally a return, but to keep behavior the same as before we fill with a dummy type.
+            typeObj = getUnsupported();
+        } else {
+            typeObj = typeObjResult.unwrap();
+        }
+
+        // Get variable address
+        Dwarf_Ptr exprPtr;
+        if (referrerLocation.has_value()) {
+            exprPtr = (Dwarf_Ptr *) referrerLocation.value();
+        } else if (Dwarf_Attribute addrAttr = attrs(DW_AT_location); !addrAttr) {
+            qCritical() << "Variable" << variableDieRef << "has no location attribute";
+            return;
+        } else if (Dwarf_Half addrAttrForm; dwarf_whatform(addrAttr, &addrAttrForm, &m_err) != DW_DLV_OK) {
+            qCritical() << "Failed to get form of location attribute for variable" << variableDieRef;
+            return;
+        } else if (auto addrAttrResult = DwarfFormConstant(addrAttr); addrAttrResult.isErr()) {
+            qCritical() << "Cannot form location constant for variable" << variableDieRef;
+            return;
+        } else {
+            exprPtr = (Dwarf_Ptr *) addrAttrResult.unwrap().u;
+        }
+
+        // Get variable name. For a variable that is a reference to a nested variable DIE, use name of referred DIE.
+        const char *dispNameCStr;
+        if (auto dispNameAttr = attrs(DW_AT_name); dispNameAttr) {
+            if (dwarf_formstring(dispNameAttr, const_cast<char **>(&dispNameCStr), &m_err) != DW_DLV_OK) {
+                qCritical() << "Failed to get variable name for" << variableDieRef;
+                return;
+            }
+        } else {
+            if (Dwarf_Attribute specificationAttr = attrs(DW_AT_specification);
+                specificationAttr && !attrs.has(DW_AT_name)) {
+                // Take name of the referred variable DIE
+                // Dwarf_Bool isInfo;
+                // if (auto derefResult = anyDeref(specificationAttr, nullptr, &m_err); derefResult.isErr()) {
+                //     qDebug() << "Go to referenced variable: var DIE specification invalid:" << variableDieRef;
+                //     return;
+                // } else {
+                //     auto deref = derefResult.unwrap();
+                //     auto actualVariableDie = m_cus[deref.first].die(deref.second);
+                //     attrs = std::move(DwarfAttrList(m_dwarfDbg, actualVariableDie));
+                // }
+
+                // if (auto dispNameAttr = attrs(DW_AT_name); dispNameAttr) {
+                //     if (dwarf_formstring(dispNameAttr, const_cast<char **>(&dispNameCStr), &m_err) != DW_DLV_OK) {
+                //         qCritical() << "Failed to get variable name for" << variableDieRef;
+                //         return;
+                //     }
+                // } else {
+                //     qCritical() << "Failed to get variable name for" << variableDieRef;
+                //     return;
+                // }
+
+                // This section is disabled because we don't intend to include the referrers in the root namespace
+                // Simply return
+                return;
+            } else {
+                Q_UNREACHABLE();
+            }
+        }
+
+        // If a parent is specified, find the parent scope
+        IScope::p parentScope = rootNs;
+        if (parentDieRef.cuIndex >= 0) {
+            Dwarf_Off parentOffset;
+            if (auto parentScopeObj = m_scopeMap.find(parentDieRef);
+                parentScopeObj != m_scopeMap.end() && parentScopeObj.value()) {
+                parentScope = parentScopeObj.value();
+            } else if (m_cus[parentDieRef.cuIndex].hasDie(parentDieRef.dieOffset)) {
+                // It's a minor inconvenience (for example, parent being a function, which is a local variable)
+                return;
+            } else {
+                qCritical() << "Parent scope not found for variable" << variableDieRef;
+                return;
+            }
+        }
+
+        // Place the variable into the parent scope
+        // HACK: ParentScope is maintained by us... this is ridiculous
+        auto variableEntry = std::make_shared<VariableEntry>(
+            VariableEntry{QString(dispNameCStr), (TypeChildInfo::offset_t) exprPtr, typeObj, parentScope});
+        parentScope->addVariable(dispNameCStr, variableEntry);
+        // Also record in CU cache
+        m_cus[variableDieRef.cuIndex].ExposedVariables[variableDieRef.dieOffset] = variableEntry;
+    };
+    for (auto varDie : m_resolutionTopLevelVariableDies) {
+        resolveVariable(varDie, DieRef(-1, NULL), {});
+    }
+
+    // Collect all source files that contain global variables
+    for (int i = 0; i < m_cus.size(); ++i) {
+        // Add as a valid CU for returning
+        const auto &cuData = m_cus[i];
+        if (cuData.ExposedVariables.size()) {
+            m_qualifiedCus.insert(cuData.Name, i);
+        }
+    }
+    QSet<QString> sourceFilesDedup;
+    for (auto it = m_qualifiedCus.begin(); it != m_qualifiedCus.end(); it++) {
+        sourceFilesDedup.insert(it.key());
+    }
+    m_qualifiedSourceFiles = sourceFilesDedup.values();
+    m_qualifiedSourceFiles.sort();
+
     // Put all orphan types into root namespace
     for (auto it = m_typeMap.begin(); it != m_typeMap.end(); it++) {
         if (it.key().cuIndex < 0) {
             continue;
         }
+        if (it.value()->parentScope()) {
+            continue;
+        }
         if (auto typeObj = std::dynamic_pointer_cast<TypeBase>(it.value()); typeObj) {
             rootNs->addType(typeObj);
+            if (auto scopeSide = std::dynamic_pointer_cast<IScope>(it.value()); scopeSide) {
+                rootNs->addSubScope(scopeSide);
+            }
         }
     }
 
     // Clear resolution-local data
     m_resolutionTypeDies.clear();
     m_resolutionNamespaceDies.clear();
+    m_resolutionNestedVariableCandidates.clear();
+    m_resolutionTopLevelVariableDies.clear();
 
     m_progressDialog.close();
 
+    m_loadSucceeded = true;
     return Ok();
 }
 
-Result<QList<SymbolBackend::SourceFile>, SymbolBackend::Error> SymbolBackend::getSourceFileList() {
+Result<QString, SymbolBackend::Error> SymbolBackend::getSymbolFilePath() {
+    if (m_loadSucceeded) {
+        return Ok(m_symbolFileFullPath);
+    }
+
+    return Err(Error::NoSymbolLoaded);
+}
+
+Result<QStringList, SymbolBackend::Error> SymbolBackend::getSourceFileList() {
     return Ok(m_qualifiedSourceFiles);
 }
 
 Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
-    SymbolBackend::getVariableOfSourceFile(uint32_t cuIndex) {
-    if (cuIndex >= m_cus.size()) {
+    SymbolBackend::getVariableOfSourceFile(QString sourceFilePath) {
+    decltype(m_qualifiedCus.cbegin()) it;
+    if (it = m_qualifiedCus.find(sourceFilePath); it == m_qualifiedCus.end()) {
         return Err(Error::InvalidParameter);
     }
-    QList<VariableNode> ret;
-    auto &cu = m_cus[cuIndex];
-    auto &topDies = cu.TopDies;
 
+    auto cus = m_qualifiedCus.values(sourceFilePath);
+    QList<VariableNode> ret;
+    foreach (auto cuIndex, cus) {
+        if (cuIndex >= m_cus.size()) {
+            return Err(Error::InvalidParameter);
+        }
+        auto &cu = m_cus[cuIndex];
+        auto &topDies = cu.TopDies;
+
+#if 0
     // Find all variable DIEs
     for (auto it = topDies.constBegin(); it != topDies.constEnd(); it++) {
         Dwarf_Half tag;
@@ -441,6 +672,21 @@ Result<QList<SymbolBackend::VariableNode>, SymbolBackend::Error>
 
         ret.append(node);
     }
+#endif
+        foreach (auto varEntry, cu.ExposedVariables) {
+            VariableNode node;
+
+            // For top level variables, use simple display name; for nested, prepend fully qualified scope name
+            node.displayName = (varEntry->scope == m_rootNamespace)
+                                   ? varEntry->name
+                                   : varEntry->scope->fullyQualifiedScopeName() + "::" + varEntry->name;
+            node.displayTypeName = varEntry->type->fullyQualifiedName();
+            node.typeObj = varEntry->type;
+            node.address = varEntry->offset;
+            writeTypeInfoToVariableNode(node, varEntry->type);
+            ret.append(node);
+        }
+    }
 
     return Ok(ret);
 }
@@ -475,9 +721,23 @@ Result<SymbolBackend::ExpandNodeResult, SymbolBackend::Error>
     return Ok(expandResult);
 }
 
+Option<IScope::p> SymbolBackend::getScope(QString scopeName) {
+    if (auto p = m_rootNamespace->getSubScope(scopeName); p.get()) {
+        return p;
+    }
+    return {};
+}
+
+Option<IType::p> SymbolBackend::getType(QString typeName) {
+    if (auto p = m_rootNamespace->getType(typeName); p.get()) {
+        return p;
+    }
+    return {};
+}
+
 /***************************************** INTERNAL UTILS *****************************************/
 
-void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, Dwarf_Die parentDie) {
+void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, DieRef parentDieRef) {
     Dwarf_Half tag;
 
     if (dwarf_tag(die, &tag, &m_err) == DW_DLV_OK) {
@@ -495,6 +755,29 @@ void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, Dwarf_Die 
             case DW_TAG_const_type:
             case DW_TAG_restrict_type: m_resolutionTypeDies.append({cu, cuOffset}); break;
             case DW_TAG_namespace: m_resolutionNamespaceDies.append({cu, cuOffset}); break;
+            case DW_TAG_variable: {
+                // If it doesn't have a parent DIE, it's a top level global variable, otherwise it's a static that
+                // resides in a class or namespace. Since top level global DIEs may refer to a nested DIE, the nested
+                // DIEs are put into a separate list so they can be resolved separately before top level DIEs.
+                if (parentDieRef.dieOffset == NULL) {
+                    m_resolutionTopLevelVariableDies.append({cu, cuOffset});
+                } else {
+                    m_resolutionNestedVariableCandidates[DieRef{cu, cuOffset}] = parentDieRef;
+                }
+                break;
+            }
+            case DW_TAG_member: {
+                // Because DWARF is dumb and cannot tell you if a member is static, we add all members that has
+                // DW_AT_declaration to the nested variable candidates map
+                if (DwarfAttrList attrs(m_dwarfDbg, die); attrs.has(DW_AT_declaration)) {
+                    if (Dwarf_Bool isDecl;
+                        dwarf_formflag(attrs(DW_AT_declaration), &isDecl, &m_err) == DW_DLV_OK && isDecl) {
+                        m_resolutionNestedVariableCandidates[DieRef{cu, cuOffset}] = parentDieRef;
+                        qDebug() << "==============" << cu << cuOffset;
+                    }
+                }
+                break;
+            }
             default: break;
         }
     }
@@ -537,8 +820,8 @@ IType::p SymbolBackend::getUnsupported() {
     return m_typeMap[DieRef{static_cast<int>(ReservedCu::InternalUnsupportedTypes), 0}];
 }
 
-bool SymbolBackend::isCuQualifiedSourceFile(DwarfCuData &cu) {
-    auto &topDies = cu.TopDies, &allDies = cu.Dies;
+bool SymbolBackend::isCuQualifiedSourceFile(const DwarfCuData &cu) {
+    const auto &topDies = cu.TopDies, &allDies = cu.Dies;
 
     // Find valid variable DIEs, if there is, return true
     for (auto it = topDies.constBegin(); it != topDies.constEnd(); it++) {
@@ -567,7 +850,7 @@ bool SymbolBackend::isCuQualifiedSourceFile(DwarfCuData &cu) {
     return false;
 }
 
-Result<QPair<int, Dwarf_Off>, std::nullptr_t> SymbolBackend::dieOffsetGlobalToCuBased(Dwarf_Off globalOffset) {
+Option<QPair<int, Dwarf_Off>> SymbolBackend::dieOffsetGlobalToCuBased(Dwarf_Off globalOffset) {
     auto cuIdxIt = m_cuOffsetMap.lowerBound(globalOffset);
     if (cuIdxIt.key() > globalOffset) {
         --cuIdxIt;
@@ -577,7 +860,7 @@ Result<QPair<int, Dwarf_Off>, std::nullptr_t> SymbolBackend::dieOffsetGlobalToCu
         Q_ASSERT(targetCu.hasDie(globalOffset - targetCu.CuDieOff));
     }
 
-    return Ok(QPair{cuIdxIt.value(), globalOffset - m_cus[cuIdxIt.value()].CuDieOff});
+    return QPair{cuIdxIt.value(), globalOffset - m_cus[cuIdxIt.value()].CuDieOff};
 }
 
 Result<QPair<int, Dwarf_Off>, int> SymbolBackend::anyDeref(Dwarf_Attribute dw_attr, Dwarf_Bool *dw_is_info,
@@ -602,13 +885,14 @@ Result<QPair<int, Dwarf_Off>, int> SymbolBackend::anyDeref(Dwarf_Attribute dw_at
         *dw_is_info = isInfo;
     }
 
-    return Ok(dieOffsetGlobalToCuBased(offset).unwrap());
+    // FIXME: failure case
+    return Ok(dieOffsetGlobalToCuBased(offset).value());
 }
 
 Result<IType::p, SymbolBackend::Error> SymbolBackend::derefTypeDie(SymbolBackend::DieRef typeDie) {
     // If it's already resolved, return it
     if (m_typeMap.contains(typeDie)) {
-        return Ok(m_typeMap.value(typeDie, m_errorType));
+        return Ok(m_typeMap.value(typeDie, getUnsupported()));
     }
 
     // If not, try resolving
@@ -774,9 +1058,13 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                             qWarning() << "DW_TAG_array_type" << typeDie << "subrange" << i << "can't get offset";
                         } else {
                             auto cuLocalOffset = dieOffsetGlobalToCuBased(globOffset);
-                            if (cuLocalOffset.isOk()) {
+                            if (cuLocalOffset.has_value()) {
                                 // Assign intermediate type object to subrange DIE
-                                m_typeMap[cuLocalOffset.unwrap()] = ret;
+                                m_typeMap[cuLocalOffset.value()] = ret;
+                            } else {
+                                qWarning()
+                                    << "DW_TAG_array_type" << typeDie << "subrange" << i << "can't get CU offset";
+                                // FIXME: What to do?
                             }
                         }
                         // Prepare for next level
@@ -872,6 +1160,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             DwarfAttrList attr(m_dwarfDbg, die);
             auto type = std::make_shared<TypeStructure>(kind);
             m_typeMap[typeDie] = type;
+            m_scopeMap[typeDie] = type;
             // Resolve type name and byte size
             if (!attr.has(DW_AT_name)) {
                 type->m_anonymous = true;
@@ -939,6 +1228,9 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                     }
                     // Correct children scope
                     std::static_pointer_cast<TypeScopeBase>(type)->addType(nestedType);
+                    if (auto scopeSide = std::dynamic_pointer_cast<IScope>(nestedType); scopeSide) {
+                        std::static_pointer_cast<TypeScopeBase>(type)->addSubScope(scopeSide);
+                    }
                     nestedType->m_parentScope = type;
                     continue;
                 }
@@ -1202,59 +1494,62 @@ Result<TypeScopeNamespace::p, SymbolBackend::Error> SymbolBackend::buildNamespac
         ret = std::make_shared<TypeScopeNamespace>(namePtr);
     }
 
-    // Iterate through children
-    Dwarf_Die child;
-    if (dwarf_child(die, &child, &m_err) != DW_DLV_OK) {
-        qCritical() << "Namespace" << nsDie << "Has no child";
-        return Err(Error::DwarfDieFormatInvalid);
-    }
-
     // Cast to TypeScopeBase because this is namespace's base class and is also the friend of SymbolBackend
     auto base = std::dynamic_pointer_cast<TypeScopeBase>(ret);
     Q_ASSERT(base);
 
-    do {
-        Dwarf_Half childTag;
-        if (dwarf_tag(child, &childTag, &m_err) != DW_DLV_OK) {
-            qWarning() << "Namespace" << nsDie << "Child" << child << "Cannot get tag";
-            continue;
-        }
-        if (!isANestableType(childTag)) {
-            continue;
-        }
 
-        // Here you might get namespaces, structures/classes/unions
-        DwarfAttrList attr(m_dwarfDbg, child);
-        // Get their CU local offset
-        Dwarf_Off globOffset, localOffset;
-        if (dwarf_die_offsets(child, &globOffset, &localOffset, &m_err) != DW_DLV_OK) {
-            qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot get offset";
-            continue;
-        }
-
-        // For namespaces, resolve them recursively
-        if (childTag == DW_TAG_namespace) {
-            auto resolveResult = buildNamespaceDie({nsDie.cuIndex, localOffset}); // Assume always in same CU
-            if (resolveResult.isErr()) {
-                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve namespace";
+    // Iterate through children
+    Dwarf_Die child;
+    if (dwarf_child(die, &child, &m_err) == DW_DLV_OK) {
+        do {
+            Dwarf_Half childTag;
+            if (dwarf_tag(child, &childTag, &m_err) != DW_DLV_OK) {
+                qWarning() << "Namespace" << nsDie << "Child" << child << "Cannot get tag";
                 continue;
             }
-            // Add sub namespace to current namespace
-            base->addSubScope(resolveResult.unwrap());
-        } else {
-            // Otherwise it must be a TypeStructure
-            if (dieOffsetGlobalToCuBased(globOffset).isErr()) {
-                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot convert to CU local offset";
+            if (!isANestableType(childTag)) {
                 continue;
-            } else if (auto typeResult = resolveTypeDie({nsDie.cuIndex, localOffset}); typeResult.isErr()) {
-                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve type";
+            }
+
+            // Here you might get namespaces, structures/classes/unions
+            DwarfAttrList attr(m_dwarfDbg, child);
+            // Get their CU local offset
+            Dwarf_Off globOffset, localOffset;
+            if (dwarf_die_offsets(child, &globOffset, &localOffset, &m_err) != DW_DLV_OK) {
+                qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot get offset";
                 continue;
+            }
+
+            // For namespaces, resolve them recursively
+            if (childTag == DW_TAG_namespace) {
+                auto resolveResult = buildNamespaceDie({nsDie.cuIndex, localOffset}); // Assume always in same CU
+                if (resolveResult.isErr()) {
+                    qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve namespace";
+                    continue;
+                }
+                // Add sub namespace to current namespace
+                base->addSubScope(resolveResult.unwrap());
             } else {
-                // Add type to current namespace
-                base->addType(typeResult.unwrap());
+                // Otherwise it must be a TypeStructure
+                if (!dieOffsetGlobalToCuBased(globOffset).has_value()) {
+                    qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot convert to CU local offset";
+                    continue;
+                } else if (auto typeResult = resolveTypeDie({nsDie.cuIndex, localOffset}); typeResult.isErr()) {
+                    qWarning() << "Namespace" << nsDie << "Child" << globOffset << "Cannot resolve type";
+                    continue;
+                } else {
+                    // Add type to current namespace
+                    base->addType(typeResult.unwrap());
+                    if (auto scopeSide = std::dynamic_pointer_cast<TypeScopeBase>(typeResult.unwrap()); scopeSide) {
+                        base->addSubScope(scopeSide);
+                    }
+                }
             }
-        }
-    } while (dwarf_siblingof_c(child, &child, &m_err) != DW_DLV_NO_ENTRY);
+        } while (dwarf_siblingof_c(child, &child, &m_err) != DW_DLV_NO_ENTRY);
+    } else {
+        qInfo() << "Namespace" << nsDie << "Has no child";
+    }
 
     m_scopeMap[nsDie] = ret;
     return Ok(ret);
@@ -1818,6 +2113,7 @@ void SymbolBackend::writeTypeInfoToVariableNode(VariableNode &node, IType::p typ
 
 bool SymbolBackend::isANestableType(Dwarf_Half tag) {
     switch (tag) {
+        case DW_TAG_typedef: // TODO: I have not verified if this is true and whether it works at all
         case DW_TAG_class_type:
         case DW_TAG_structure_type:
         case DW_TAG_union_type: return true;
@@ -1851,6 +2147,17 @@ QDebug operator<<(QDebug debug, const std::optional<TypeChildInfo::offset_t> &c)
 }
 
 /***************************************** DWARF HELPERS *****************************************/
+Option<SymbolBackend::DieRef> SymbolBackend::DwarfDieToDieRef(Dwarf_Die die) {
+    Dwarf_Off globOffset, localOffset;
+    if (dwarf_die_offsets(die, &globOffset, &localOffset, &m_err) != DW_DLV_OK) {
+        return {};
+    }
+    if (auto ret = dieOffsetGlobalToCuBased(globOffset); ret.has_value()) {
+        return DieRef{ret.value().first, localOffset};
+    } else {
+        return {};
+    }
+}
 
 Result<Dwarf_Off, int> SymbolBackend::DwarfCuDataOffsetFromDie(Dwarf_Die die, Dwarf_Error *error) {
     Dwarf_Off cu_offset, cu_length;
@@ -1936,7 +2243,7 @@ Result<SymbolBackend::DwarfFormedInt, SymbolBackend::Error> SymbolBackend::Dwarf
                         switch (op) {
                             case DW_OP_plus_uconst: formedInt.u += opd1; break;
                             case DW_OP_addr: formedInt.u = opd1; break;
-                            default: Q_ASSERT_X(false, __FUNCTION__, "Unexpected DW_OP");
+                            default: return Err(Error::DwarfAttrNotConstant);
                         }
                     } else {
                         dwarf_dealloc_loc_head_c(loclist_head);

@@ -12,6 +12,8 @@
 
 class TypeChildInfo;
 class IType;
+class IScope;
+class VariableEntry;
 
 class IScope {
 public:
@@ -22,10 +24,13 @@ public:
     virtual QString fullyQualifiedScopeName() = 0;
     virtual std::shared_ptr<IType> getType(QString typeName) = 0;
     virtual std::shared_ptr<IScope> getSubScope(QString scopeName) = 0;
+    virtual std::shared_ptr<VariableEntry> getVariable(QString name) = 0;
+    virtual void mergeFrom(IScope::p source) = 0;
 
 private:
     virtual void addType(std::shared_ptr<IType> type) = 0;
     virtual void addSubScope(std::shared_ptr<IScope> scope) = 0;
+    virtual void addVariable(QString name, std::shared_ptr<VariableEntry> symbol) = 0;
 };
 
 class IType {
@@ -70,6 +75,7 @@ public:
     virtual Kind kind() = 0;
     virtual QString displayName() = 0;
     virtual QString fullyQualifiedName() = 0;
+    virtual IScope::p parentScope() = 0;
     virtual bool expandable() = 0;
     virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() = 0;
     virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) = 0;
@@ -79,83 +85,6 @@ public:
     virtual size_t getSizeof() = 0;
 
     typedef std::shared_ptr<IType> p;
-};
-
-class TypeScopeBase : public IScope {
-public:
-    friend class SymbolBackend;
-    virtual QString fullyQualifiedScopeName() override {
-        auto _parentScope = parentScope();
-        QString ret;
-        while (_parentScope.get() != nullptr) {
-            if (_parentScope->scopeName().isEmpty())
-                continue; // Only Root namespace has an empty name
-            ret += _parentScope->scopeName();
-            ret += "::";
-            _parentScope = _parentScope->parentScope();
-        }
-        ret += scopeName();
-        return ret;
-    }
-    virtual std::shared_ptr<IType> getType(QString typeName) override {
-        if (auto type = m_types.find(typeName); type != m_types.end()) {
-            return type.value();
-        }
-        return nullptr;
-    }
-    virtual std::shared_ptr<IScope> getSubScope(QString scopeName) override {
-        if (auto scope = m_subScopes.find(scopeName); scope != m_subScopes.end()) {
-            return scope.value();
-        }
-        return nullptr;
-    }
-
-protected:
-    virtual void addType(std::shared_ptr<IType> type) override { m_types[type->displayName()] = type; }
-    virtual void addSubScope(std::shared_ptr<IScope> scope) override { m_subScopes[scope->scopeName()] = scope; }
-
-    QHash<QString, std::shared_ptr<IType>> m_types;
-    QHash<QString, std::shared_ptr<IScope>> m_subScopes;
-};
-
-class TypeScopeNamespace : public TypeScopeBase, public std::enable_shared_from_this<TypeScopeNamespace> {
-public:
-    friend class SymbolBackend;
-    typedef std::shared_ptr<TypeScopeNamespace> p;
-    TypeScopeNamespace(QString name) : m_parentScope(nullptr), m_namespaceName(name) {}
-    TypeScopeNamespace(QString name, p parentScope) : m_parentScope(parentScope), m_namespaceName(name) {}
-
-    virtual QString scopeName() { return m_namespaceName; }
-    virtual IScope::p parentScope() { return m_parentScope; }
-
-private:
-    QString m_namespaceName;
-    IScope::p m_parentScope;
-};
-
-class TypeBase : public IType, public std::enable_shared_from_this<TypeBase> {
-public:
-    virtual Kind kind() override { return m_kind; }
-    virtual QString fullyQualifiedName() override {
-        auto parentScope = m_parentScope;
-        QString ret;
-        while (parentScope.get() != nullptr) {
-            if (parentScope->scopeName().isEmpty())
-                continue; // Only Root namespace has an empty name
-            ret += parentScope->scopeName();
-            ret += "::";
-            parentScope = parentScope->parentScope();
-        }
-        ret += displayName();
-        return ret;
-    }
-    virtual TypeFlags flags() override { return TypeFlags({NoFlags}); }
-
-    typedef std::shared_ptr<TypeBase> p;
-
-protected:
-    Kind m_kind;
-    std::shared_ptr<IScope> m_parentScope;
 };
 
 struct TypeChildInfo {
@@ -175,11 +104,137 @@ struct TypeChildInfo {
                        // occupies (bitWidth) bits
 };
 
+struct VariableEntry {
+    using p = std::shared_ptr<VariableEntry>;
+
+    QString name;
+    TypeChildInfo::offset_t offset;
+    std::shared_ptr<IType> type;
+    std::shared_ptr<IScope> scope;
+};
+
+class TypeScopeBase : public IScope {
+public:
+    friend class SymbolBackend;
+    virtual QString fullyQualifiedScopeName() override {
+        auto _parentScope = parentScope();
+        QString ret;
+        ret.prepend(scopeName());
+        while (_parentScope.get() != nullptr) {
+            if (_parentScope->scopeName().isEmpty())
+                break; // Only Root namespace has an empty name
+            ret.prepend("::");
+            ret.prepend(_parentScope->scopeName());
+            _parentScope = _parentScope->parentScope();
+        }
+        return ret;
+    }
+    virtual std::shared_ptr<IType> getType(QString typeName) override {
+        if (auto type = m_types.find(typeName); type != m_types.end()) {
+            return type.value();
+        }
+        return nullptr;
+    }
+    virtual std::shared_ptr<IScope> getSubScope(QString scopeName) override {
+        if (auto scope = m_subScopes.find(scopeName); scope != m_subScopes.end()) {
+            return scope.value();
+        }
+        return nullptr;
+    }
+    virtual VariableEntry::p getVariable(QString name) override {
+        if (auto symbol = m_variables.find(name); symbol != m_variables.end()) {
+            return symbol.value();
+        }
+        return {};
+    }
+    virtual void mergeFrom(IScope::p source) override {
+        std::shared_ptr<TypeScopeBase> source2 = std::dynamic_pointer_cast<TypeScopeBase>(source);
+        if (source2.get() == nullptr)
+            return;
+        for (auto &type : source2->m_types) {
+            addType(type);
+        }
+        for (auto &scope : source2->m_subScopes) {
+            addSubScope(scope);
+        }
+        for (auto it = source2->m_variables.begin(); it != source2->m_variables.end(); ++it) {
+            addVariable(it.key(), it.value());
+        }
+    }
+
+protected:
+    virtual void addType(std::shared_ptr<IType> type) override { m_types[type->displayName()] = type; }
+    virtual void addSubScope(std::shared_ptr<IScope> scope) override {
+        // There can be scopes with same name. We need to transfer all stuff in the passed-in scope to the existing one
+        if (auto it = m_subScopes.find(scope->scopeName()); it != m_subScopes.end()) {
+            (*it)->mergeFrom(scope);
+            return;
+        }
+        m_subScopes[scope->scopeName()] = scope;
+        if (auto scope2 = std::dynamic_pointer_cast<TypeScopeBase>(scope); scope2.get() != nullptr) {
+            scope2->reparent(sharedFinalFromThis());
+        }
+    }
+    virtual void addVariable(QString name, VariableEntry::p symbol) override { m_variables[name] = symbol; }
+    virtual void reparent(std::shared_ptr<IScope> newParent) = 0;
+    virtual IScope::p sharedFinalFromThis() = 0;
+
+    QHash<QString, std::shared_ptr<IType>> m_types;
+    QHash<QString, std::shared_ptr<IScope>> m_subScopes;
+    QHash<QString, VariableEntry::p> m_variables;
+};
+
+class TypeScopeNamespace : public TypeScopeBase, public std::enable_shared_from_this<TypeScopeNamespace> {
+public:
+    friend class SymbolBackend;
+    typedef std::shared_ptr<TypeScopeNamespace> p;
+    TypeScopeNamespace(QString name) : m_parentScope(nullptr), m_namespaceName(name) {}
+    TypeScopeNamespace(QString name, p parentScope) : m_parentScope(parentScope), m_namespaceName(name) {}
+
+    virtual QString scopeName() override { return m_namespaceName; }
+    virtual IScope::p parentScope() override { return m_parentScope; }
+
+protected:
+    virtual void reparent(std::shared_ptr<IScope> newParent) override { m_parentScope = newParent; }
+    virtual IScope::p sharedFinalFromThis() override { return shared_from_this(); }
+
+private:
+    QString m_namespaceName;
+    IScope::p m_parentScope;
+};
+
+class TypeBase : public IType, public std::enable_shared_from_this<TypeBase> {
+public:
+    virtual Kind kind() override { return m_kind; }
+    virtual QString fullyQualifiedName() override {
+        auto parentScope = m_parentScope;
+        QString ret;
+        while (parentScope.get() != nullptr) {
+            if (parentScope->scopeName().isEmpty())
+                break; // Only Root namespace has an empty name
+            ret += parentScope->scopeName();
+            ret += "::";
+            parentScope = parentScope->parentScope();
+        }
+        ret += displayName();
+        return ret;
+    }
+    virtual IScope::p parentScope() override { return m_parentScope; }
+    virtual TypeFlags flags() override { return TypeFlags({NoFlags}); }
+
+    typedef std::shared_ptr<TypeBase> p;
+
+protected:
+    Kind m_kind;
+    std::shared_ptr<IScope> m_parentScope;
+};
+
 // Base type of unsupported types, like non-power-of-2 length of integers, function pointers, etc.
 class TypeUnsupported : public IType, public std::enable_shared_from_this<TypeUnsupported> {
     virtual Kind kind() override { return Kind::Unsupported; }
     virtual QString displayName() override { return "<UnsupportedType>"; }
     virtual QString fullyQualifiedName() override { return displayName(); }
+    virtual IScope::p parentScope() override { return nullptr; }
     virtual bool expandable() override { return false; }
     virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() override { return Err(nullptr); }
     virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override { return Err(nullptr); };
@@ -250,6 +305,12 @@ public:
 
     virtual QString scopeName() override { return m_typeName; }
     virtual IScope::p parentScope() override { return m_parentScope; }
+
+protected:
+    virtual void reparent(std::shared_ptr<IScope> newParent) override { m_parentScope = newParent; }
+    virtual IScope::p sharedFinalFromThis() override {
+        return std::static_pointer_cast<TypeStructure>(shared_from_this());
+    }
 
 private:
     QString m_typeName;
@@ -431,6 +492,12 @@ public:
 
     virtual QString scopeName() override { return m_typeName; }
     virtual IScope::p parentScope() override { return m_parentScope; }
+
+protected:
+    virtual void reparent(std::shared_ptr<IScope> newParent) override { m_parentScope = newParent; }
+    virtual IScope::p sharedFinalFromThis() override {
+        return std::static_pointer_cast<TypeStructure>(shared_from_this());
+    }
 
 private:
     QString m_typeName;
