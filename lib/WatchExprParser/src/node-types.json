@@ -409,15 +409,15 @@
       "required": true,
       "types": [
         {
+          "type": "cast_expr",
+          "named": true
+        },
+        {
           "type": "postfix_expr",
           "named": true
         },
         {
           "type": "sym_unary",
-          "named": true
-        },
-        {
-          "type": "unary_expr",
           "named": true
         }
       ]

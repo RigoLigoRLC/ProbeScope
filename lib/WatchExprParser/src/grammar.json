@@ -89,7 +89,7 @@
             },
             {
               "type": "SYMBOL",
-              "name": "unary_expr"
+              "name": "cast_expr"
             }
           ]
         }
