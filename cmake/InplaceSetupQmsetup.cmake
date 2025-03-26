@@ -8,7 +8,7 @@ if (NOT TARGET qmsetup::library)
     set(_source_dir ${CMAKE_SOURCE_DIR}/host-tools/qmsetup)
 
     # Import install function
-    include("${_source_dir}/cmake/modules/InstallPackage.cmake")
+    include("${_source_dir}/cmake/modules/private/InstallPackage.cmake")
 
     # Install package in place
     set(_package_path)

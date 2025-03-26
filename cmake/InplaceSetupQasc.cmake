@@ -7,7 +7,7 @@ if (NOT QASTOOL_INCLUDE_DIRS)
     set(_source_dir ${CMAKE_SOURCE_DIR}/host-tools/qt-json-autogen)
 
     # Import install function
-    qm_import(InstallPackage)
+    include("${CMAKE_SOURCE_DIR}/host-tools/qmsetup/cmake/modules/private/InstallPackage.cmake")
 
     # Install package in place
     set(_package_path)
