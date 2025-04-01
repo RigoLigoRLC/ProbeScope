@@ -100,7 +100,7 @@ UseTab: Never
 AlignAfterOpenBracket: Align
 
 # 名字空间内部缩进
-NamespaceIndentation: All
+NamespaceIndentation: Inner
 
 # 一行最长列数
 ColumnLimit: 120
@@ -114,7 +114,7 @@ AlignArrayOfStructures: Left
 
 # ContinuationIndentWidth: 0
 
-FixNamespaceComments: false
+FixNamespaceComments: true
 
 # 使短的case标签放在一行内
 AllowShortCaseLabelsOnASingleLine: true
