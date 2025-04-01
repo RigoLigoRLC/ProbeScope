@@ -16,7 +16,7 @@ include(cmake/InplaceSetupQasc.cmake)
 add_subdirectory(cmake/corrosion)
 
 # Set C++ standard  
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Setup absolutely necessary Qt stuff
 set(QT_VERSION_MAJOR 5)
@@ -57,6 +57,8 @@ include_directories(src ui)
 
 # Create ProbeScope executable
 file(GLOB_RECURSE SOURCES
+    inc/*.h
+
     src/*.cpp
     src/*.c
     src/*.h
