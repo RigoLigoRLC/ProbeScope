@@ -347,7 +347,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         }
     }
 
-    qDebug() << "<<<<<<<<<<<<<<<<<<<" << m_resolutionNestedVariableCandidates;
+    // qDebug() << "<<<<<<<<<<<<<<<<<<<" << m_resolutionNestedVariableCandidates;
 
     // Resolve all variables
     std::function<void(DieRef, DieRef, Option<uint64_t>)> resolveVariable = [&](DieRef variableDieRef,

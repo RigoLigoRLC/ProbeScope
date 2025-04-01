@@ -231,7 +231,7 @@
           "named": true
         },
         {
-          "type": "ident",
+          "type": "scoped_ident",
           "named": true
         },
         {

@@ -2,13 +2,15 @@
 #include "symbolpanel.h"
 #include "delegate/symbolnamedelegate.h"
 #include "eventfilters/firstcolumnfollowresizefilter.h"
-#include "expressionevaluator.h"
+#include "expressionevaluator/parser.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
 #include <QDebug>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QTreeWidget>
+
+
 
 
 
@@ -149,22 +151,18 @@ void SymbolPanel::sltAddWatchEntryClicked() {
 
 
     QMessageBox::information(this, "Expression generation", expr);
-    ExpressionEvaluator evalr;
-    auto parseResult = evalr.parseToTokens(expr);
+    auto parseResult = ExpressionEvaluator::Parser::parseToBytecode(expr);
     qInfo() << expr << "Evaluation:";
     if (parseResult.isErr()) {
         qCritical() << parseResult.unwrapErr();
     } else {
-        auto tokens = parseResult.unwrap();
-        foreach (auto &i, tokens) {
-            qInfo() << ExpressionEvaluator::tokenTypeToString(i.type) << i.embedData;
-        }
+        qInfo().noquote() << parseResult.unwrap().disassemble();
     }
 }
 
 void SymbolPanel::sltTestEvalExprClicked() {
     auto expr = QInputDialog::getText(this, "Expr", "Put expr");
-    auto parseResult = ExpressionEvaluator::treeSitter(expr);
+    auto parseResult = ExpressionEvaluator::Parser::treeSitter(expr);
     if (parseResult.isErr()) {
         QMessageBox::critical(this, "Error parsing expression", expr + '\n' + parseResult.unwrapErr());
     } else {

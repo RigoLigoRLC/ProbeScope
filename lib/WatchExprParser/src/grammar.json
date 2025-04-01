@@ -194,7 +194,7 @@
           },
           {
             "type": "SYMBOL",
-            "name": "ident"
+            "name": "scoped_ident"
           }
         ]
       }
@@ -527,15 +527,15 @@
     },
     "num_dec": {
       "type": "PATTERN",
-      "value": "[0-9]+"
+      "value": "[0-9_]+"
     },
     "num_hex": {
       "type": "PATTERN",
-      "value": "[0-9a-fA-F]+"
+      "value": "[0-9a-fA-F_]+"
     },
     "num_bin": {
       "type": "PATTERN",
-      "value": "[0-1]+"
+      "value": "[0-1_]+"
     }
   },
   "extras": [
