@@ -2,6 +2,7 @@
 #include "symbolpanel.h"
 #include "delegate/symbolnamedelegate.h"
 #include "eventfilters/firstcolumnfollowresizefilter.h"
+#include "expressionevaluator/optimizer.h"
 #include "expressionevaluator/parser.h"
 #include "symbolbackend.h"
 #include "ui_symbolpanel.h"
@@ -9,10 +10,6 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QTreeWidget>
-
-
-
-
 
 
 SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
@@ -156,7 +153,16 @@ void SymbolPanel::sltAddWatchEntryClicked() {
     if (parseResult.isErr()) {
         qCritical() << parseResult.unwrapErr();
     } else {
-        qInfo().noquote() << parseResult.unwrap().disassemble();
+        auto bytecode = parseResult.unwrap();
+        qInfo().noquote() << bytecode.disassemble();
+        qInfo() << "Optimization:";
+        auto optimizationResult = ExpressionEvaluator::StaticOptimize(bytecode, m_symbolBackend);
+        if (optimizationResult.isErr()) {
+            qInfo() << "Error:" << optimizationResult.unwrapErr();
+        } else {
+            auto optimizedBytecode = optimizationResult.unwrap();
+            qInfo().noquote() << optimizedBytecode.disassemble();
+        }
     }
 }
 

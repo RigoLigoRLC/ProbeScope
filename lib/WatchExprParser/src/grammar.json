@@ -195,6 +195,10 @@
           {
             "type": "SYMBOL",
             "name": "scoped_ident"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "det_expr"
           }
         ]
       }

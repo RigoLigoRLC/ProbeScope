@@ -1,10 +1,12 @@
 
 #pragma once
 
+#include "expressionevaluator/executionstate.h"
 #include "opcodes.h"
 #include <QByteArray>
 #include <QVariant>
 #include <QVector>
+#include <functional>
 #include <optional>
 #include <variant>
 
@@ -22,9 +24,13 @@ struct Bytecode {
     QByteArray instructions;
     QVector<QVariant> constants;
 
+    using ImmType = std::variant<std::nullopt_t, uint64_t, QString>;
+
     bool pushInstruction(Opcode opcode, std::optional<QVariant> immediate);
 
     QString disassemble(bool integerInHex = true);
+
+    void execute(ExecutionState &state, std::function<bool(ExecutionState &, Opcode, ImmType)> runner);
 
 private:
     static bool checkIfRequiredImmediateValid(Opcode opcode, const std::optional<QVariant> &immediate);

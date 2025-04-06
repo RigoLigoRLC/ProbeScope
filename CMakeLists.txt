@@ -23,7 +23,7 @@ set(QT_VERSION_MAJOR 5)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-qm_find_qt(Core Widgets Svg LinguistTools)
+qm_find_qt(Core Widgets PrintSupport Svg LinguistTools)
 
 # Import QTermWidget
 set(BUILD_STATIC ON)
@@ -49,6 +49,12 @@ include(cmake/ImportLibdwarf.cmake)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 add_subdirectory(lib/WatchExprParser)
 
+# Import QCustomPlot
+add_subdirectory(lib/QCustomPlot)
+
+# Import atomic_queue
+find_path(ATOMIC_QUEUE_INCLUDE_DIRS "atomic_queue/atomic_queue.h")
+
 # Build the internal probelibs
 add_subdirectory(plugins)
 
@@ -70,15 +76,25 @@ file(GLOB_RECURSE SOURCES
     res/*.qrc
     lang/*.qrc
 )
+
 add_executable(probescope)
 
+file(GLOB_RECURSE QAS_HEADERS
+    inc/serialization/*.h
+)
+qas_wrap_cpp(QAS_SOURCES ${QAS_HEADERS} TARGET probescope)
+
 qm_configure_target(probescope
-    SOURCES ${SOURCES}
+    SOURCES
+        ${SOURCES}
+        ${QAS_SOURCES}
+
     LINKS_PRIVATE
         qtermwidget
         ads::qt5advanceddocking
         SingleApplication::SingleApplication
         ${libdwarf_LINK_LIBRARIES}
+        ${QCUSTOMPLOT_LINK_LIBRARIES}
         unofficial::tree-sitter::tree-sitter
         WatchExprParser
 
@@ -86,6 +102,8 @@ qm_configure_target(probescope
         inc
         inc/probelib-interface
         src/qtermwidget
+        ${QASTOOL_INCLUDE_DIRS}
+        ${ATOMIC_QUEUE_INCLUDE_DIRS}
 
     QT_LINKS Core Widgets Svg
 )

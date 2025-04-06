@@ -69,7 +69,7 @@ TSParser *Parser::getTsParser() {
         INIT_TS_SYMBOL(num_dec);
         INIT_TS_SYMBOL(num_hex);
         INIT_TS_SYMBOL(num_bin);
-        INIT_TS_SYMBOL(ERROR);
+        INIT_TS_SYMBOL(ERROR_);
 
 #undef INIT_TS_SYMBOL
     });
@@ -156,6 +156,8 @@ Result<Bytecode, QString> Parser::parseToBytecode(QString expression) {
     auto defineBase = [&](TSTreeCursor *origCursor) -> Result<void, QString> {
         auto node = ts_tree_cursor_current_node(origCursor);
         auto nodeid = ts_node_symbol(node);
+        // We always reset scope before defining base or type
+        ret.pushInstruction(BaseResetScope, {});
         if (nodeid == id.ident) {
             ret.pushInstruction(LoadBase, nodeToString(node));
         } else if (nodeid == id.scoped_ident) {
@@ -200,6 +202,9 @@ Result<Bytecode, QString> Parser::parseToBytecode(QString expression) {
 
     auto processResult = simplifyExpr(&cursor);
     ts_tree_cursor_delete(&cursor);
+
+    // FIXME: When to use BaseEval?
+    ret.pushInstruction(BaseEval, {});
 
     if (processResult.isErr()) {
         return Err(processResult.unwrapErr());

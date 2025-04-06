@@ -66,6 +66,7 @@ namespace probelib {
      * coreId is the key to index into ProbeLib's internal list of cores; and coreDescription is the human-readable
      * description of the core, and it can be core "name" (like "Master Core"), microarchitecture (like "Cortex-M4"),
      * or anything human readable to distinguish between cores.
+     * @warning Do not assume coreId is contiguous or 0-based. It can be any arbitrary number.
      */
     struct CoreDescriptor {
         size_t coreId;

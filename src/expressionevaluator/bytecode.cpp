@@ -24,7 +24,7 @@ bool Bytecode::pushInstruction(Opcode opcode, std::optional<QVariant> immediate)
     if (!checkIfRequiredImmediateValid(opcode, immediate)) {
         return false;
     }
-    if (immediate->isValid()) {
+    if (immediate.has_value()) {
         // We only fit uint16_t::max number of constants
         // FIXME: if it's inlineable we should allow that?
         if (constants.size() > std::numeric_limits<uint16_t>::max()) {
@@ -33,14 +33,18 @@ bool Bytecode::pushInstruction(Opcode opcode, std::optional<QVariant> immediate)
         while (instructions.size() % 4 > 1) {
             instructions.push_back(Opcode::Nop);
         }
-        instructions.push_back(static_cast<uint8_t>(opcode));
+
+        // Meta opcodes for integer operations will be handled in handleIntegerImmediates
+        if (opcode < MaxOpcodes) {
+            instructions.push_back(static_cast<uint8_t>(opcode));
+        }
 
         uint16_t immIndex;
         if (immediate->type() == QVariant::String) {
             immIndex = constants.size();
             constants.push_back(immediate.value());
         } else {
-            handleIntegerImmediates(opcode, immediate.value());
+            immIndex = handleIntegerImmediates(opcode, immediate.value());
         }
         instructions.push_back(QByteArray(reinterpret_cast<char *>(&immIndex), 2));
         return true;
@@ -54,6 +58,7 @@ QString Bytecode::disassemble(bool integerInHex) {
     auto metaEnum = QMetaEnum::fromType<Opcode>();
     QString ret;
     uint16_t immIdx;
+    // TODO: rewrite using Bytecode::execute
 
     auto getImmIndex = [](decltype(instructions.cbegin()) &it) -> auto {
         uint16_t ret = *it;
@@ -62,11 +67,11 @@ QString Bytecode::disassemble(bool integerInHex) {
         return ret;
     };
 
-    auto getConstant = [this](uint16_t immIndex) -> QString {
+    auto getConstant = [this](uint16_t immIndex) -> QVariant {
         if (constants.size() <= immIndex) {
             return QStringLiteral("<ImmIndexOverflow %1>").arg(immIndex);
         }
-        return constants[immIndex].toString();
+        return constants[immIndex];
     };
 
     for (auto it = instructions.cbegin(); it != instructions.cend(); ++it) {
@@ -89,17 +94,17 @@ QString Bytecode::disassemble(bool integerInHex) {
             if (U16ImmSet.contains(insn)) {
                 ret += QString::number(immIdx, base);
             } else if (U32ImmSet.contains(insn)) {
-                ret += getConstant(immIdx);
+                ret += QString::number(getConstant(immIdx).toULongLong(), base);
             } else if (U64ImmSet.contains(insn)) {
-                ret += getConstant(immIdx);
+                ret += QString::number(getConstant(immIdx).toULongLong(), base);
             } else if (I16ImmSet.contains(insn)) {
                 int16_t signedImmIdx;
                 memcpy(&signedImmIdx, &immIdx, 2);
                 ret += QString::number(signedImmIdx, base);
             } else if (I32ImmSet.contains(insn)) {
-                ret += getConstant(immIdx);
+                ret += QString::number(getConstant(immIdx).toLongLong(), base);
             } else if (I64ImmSet.contains(insn)) {
-                ret += getConstant(immIdx);
+                ret += QString::number(getConstant(immIdx).toLongLong(), base);
             } else {
                 Q_UNREACHABLE();
             }
@@ -107,7 +112,7 @@ QString Bytecode::disassemble(bool integerInHex) {
             // String immediate specific processing
             immIdx = getImmIndex(++it);
             ret += " \"";
-            ret += getConstant(immIdx);
+            ret += getConstant(immIdx).toString();
             ret += '"';
         }
         ret += '\n';
@@ -115,6 +120,77 @@ QString Bytecode::disassemble(bool integerInHex) {
 
     return ret;
 }
+
+void Bytecode::execute(ExecutionState &state, std::function<bool(ExecutionState &, Opcode, ImmType)> runner) {
+    auto getImmIndex = [this](size_t &offset) -> auto {
+        uint16_t ret = instructions.at(offset);
+        ++offset;
+        ret |= (instructions.at(offset) << 8);
+        return ret;
+    };
+
+    auto getConstant = [this](uint16_t immIndex) {
+        Q_ASSERT(constants.size() > immIndex);
+        return constants[immIndex];
+    };
+
+    if (state.PC > instructions.size()) {
+        qCritical() << "Bytecode execution PC overflow: insn count" << instructions.size() << "PC=" << state.PC;
+        qCritical() << disassemble();
+        state.PC = 0;
+        return;
+    }
+
+    // Try execute all instructions if the executor is satisfied
+    for (auto &PC = state.PC; PC < instructions.size(); ++PC) {
+        // Fetch instruction and immediate
+        uint8_t insn = instructions.at(PC);
+        ImmType imm{std::nullopt};
+        // Resolve immediate
+        uint16_t immIdx;
+        union {
+            int64_t i;
+            uint64_t u;
+        } SignExtender;
+        if (IntImmSet.contains(insn)) {
+            // Do integer immediate specific processing
+            immIdx = getImmIndex(++PC);
+            if (U16ImmSet.contains(insn)) {
+                imm = immIdx;
+            } else if (U32ImmSet.contains(insn)) {
+                imm = getConstant(immIdx).toULongLong();
+            } else if (U64ImmSet.contains(insn)) {
+                imm = getConstant(immIdx).toULongLong();
+            } else if (I16ImmSet.contains(insn)) {
+                int16_t signedImmIdx;
+                memcpy(&signedImmIdx, &immIdx, 2);
+                SignExtender.i = signedImmIdx;
+                imm = SignExtender.u;
+            } else if (I32ImmSet.contains(insn)) {
+                SignExtender.i = getConstant(immIdx).toLongLong();
+                imm = SignExtender.u;
+            } else if (I64ImmSet.contains(insn)) {
+                SignExtender.i = getConstant(immIdx).toLongLong();
+                imm = SignExtender.u;
+            } else {
+                Q_UNREACHABLE();
+            }
+        } else if (StrImmSet.contains(insn)) {
+            // String immediate specific processing
+            immIdx = getImmIndex(++PC);
+            imm = getConstant(immIdx).toString();
+        }
+
+        // Give it to execution engine and see if it wants to continue
+        if (!runner(state, Opcode(insn), imm)) {
+            // FIXME: halt reason? Finished? Error? MemAccess?
+            ++PC;
+            break;
+        }
+    }
+}
+
+/***************************************** INTERNAL UTILS *****************************************/
 
 bool Bytecode::checkIfRequiredImmediateValid(Opcode opcode, const std::optional<QVariant> &immediate) {
     switch (opcode) {

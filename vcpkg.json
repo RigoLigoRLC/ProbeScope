@@ -1,6 +1,7 @@
 {
     "dependencies": [
         "libdwarf",
-        "tree-sitter"
+        "tree-sitter",
+        "atomic-queue"
     ]
 }

@@ -10,7 +10,11 @@ namespace ExpressionEvaluator {
 
 struct ExecutionState {
     enum FlagsEnum {
-
+        BaseDefined = 0x01,
+        InSingleEvalBlock = 0x02,
+        SingleEvalBlockDefined = 0x04,
+        PendingMemAccess = 0x08,
+        MemberEvaluated = 0x10, ///< Member evaluation is performed because last member access got a bitfield.
     };
     Q_DECLARE_FLAGS(Flags, FlagsEnum);
 

@@ -29,7 +29,7 @@ public:
     // Connection
     /// @brief Set Connection speed in kHz. Will only take effect if set before connect(). Default is 4MHz.
     void setConnectionSpeed(int khz) { m_connectionSpeed = khz; };
-    /// @brief Get the connection speed in kHz. If no probe is selected, returns negative value. Undefined if never set.
+    /// @brief Get the connection speed in kHz. If no probe is selected, returns -1. Undefined if never set.
     int connectionSpeed() const { return m_currentProbeLib ? m_currentProbeLib->connectionSpeed().unwrapOr(-1) : -1; }
     bool sessionActive() const { return m_probeSession.has_value(); }
     Result<void, QString> connect();

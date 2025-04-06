@@ -60,7 +60,7 @@ private:
         uint32_t num_dec;
         uint32_t num_hex;
         uint32_t num_bin;
-        uint32_t ERROR;
+        uint32_t ERROR_;
     };
     static NodeSymbols id;
     // clang-format on

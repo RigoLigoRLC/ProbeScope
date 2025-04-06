@@ -23,12 +23,6 @@ private:
     // Inner utils
     Result<void, SymbolBackend::Error> loadSymbolFile(QString symbolFileAbsPath);
 
-private slots:
-    void sltOpenSymbolFile();
-    void sltReloadSymbolFile();
-
-    void sltSelectProbe();
-
 private:
     Ui::ProbeScopeWindow *ui;
 
@@ -36,10 +30,12 @@ private:
     ads::CDockManager *m_dockMgr;
     ads::CDockWidget *m_dockWelcomeBackground;
     ads::CDockWidget *m_dockSymbolPanel;
+    QMap<size_t, ads::CDockWidget *> m_dockPlotAreas;
 
     // Panel components
     WelcomeBackground *m_welcomeBackground;
     SymbolPanel *m_symbolPanel;
+    QMap<size_t, QWidget *> m_plotAreas; // TODO: Correct type for plot area
 
     // Status bar
     QLabel *m_lblConnection;
@@ -51,4 +47,15 @@ private:
 
     // Backend
     WorkspaceModel *m_workspace;
+
+private slots:
+    void sltOpenSymbolFile();
+    void sltReloadSymbolFile();
+
+    void sltSelectProbe();
+
+    void sltCreatePlotArea(size_t id);
+
+signals:
+    void plotAreaClosed(size_t id);
 };

@@ -227,6 +227,10 @@
       "required": true,
       "types": [
         {
+          "type": "det_expr",
+          "named": true
+        },
+        {
           "type": "expr",
           "named": true
         },

@@ -85,6 +85,21 @@ public:
     virtual size_t getSizeof() = 0;
 
     typedef std::shared_ptr<IType> p;
+
+    static bool isSignedInteger(p type) {
+        switch (type->kind()) {
+            case Kind::Uint8:
+            case Kind::Uint16:
+            case Kind::Uint32:
+            case Kind::Uint64: return false;
+            case Kind::Sint8:
+            case Kind::Sint16:
+            case Kind::Sint32:
+            case Kind::Sint64: return true;
+            default: Q_ASSERT(false && "Not integer type");
+        }
+        return false;
+    }
 };
 
 struct TypeChildInfo {
@@ -94,6 +109,7 @@ struct TypeChildInfo {
         FromInheritance = 1,           ///< This member is synthesized from inherited subclass
         FromAnonymousSubstructure = 2, ///< This member is synthesized from an anonymous substructure
         AnonymousSubstructure = 4,     ///< This member is an anonymous substructure
+        Bitfield = 8,                  ///< This member have valid bitfield properties
     };
     QString name;
     IType::p type;

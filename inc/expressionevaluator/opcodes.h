@@ -39,7 +39,13 @@ enum Opcode {
     BaseDeref, // IMM: NONE. Apply one dereference operation on the BaseType and replaces it with the dereferenced type.
                // If current BaseType is not Pointer or Array modified, an error is raised.
     BaseMember, // IMM: STR $a. Pop one element, add the offset of BaseType's member $a, and push back onto stack, and
-                // replace BaseType with BaseType's member $a's type.
+                // replace BaseType with BaseType's member $a's type. For bitfields, the member value extraction code is
+                // also pushed and the base type is changed to bitfield type, this is because we cannot represent
+                // bitfield types in this system (and there's no need to do so either, if you've reached a bitfield
+                // member you can't do anything further on it) so we automatically does the BaseMemberEval.
+    BaseEval,   // IMM: NONE. When BaseMember was executed we only have the address of the member on the stack and its
+                // type in BaseType register. With this opcode we'll evaluate the member and get its value. Note that if
+                // BaseMember access got a bitfield type, BaseEval is automatically performed in static optimization.
 
     TypeResetScope = 0x20, // IMM: NONE. Reset TypeScope to the root level scope.
     TypeLoadScope, // IMM: STR $a. Find a scope named $a in current TypeScope and replace TypeScope with this scope.
@@ -78,8 +84,24 @@ enum Opcode {
     Deref32,       // IMM: NONE. Pop one element as address, read 4 bytes of device memory there and push it onto stack.
     Deref64,       // IMM: NONE. Pop one element as address, read 8 bytes of device memory there and push it onto stack.
 
+    ReturnU8 = 0xD0, // IMM: NONE. Pop one element and end execution with this element as the execution result in U8.
+    ReturnU16,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U16.
+    ReturnU32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U32.
+    ReturnU64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U64.
+    ReturnI8,        // IMM: NONE. Pop one element and end execution with this element as the execution result in I8.
+    ReturnI16,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I16.
+    ReturnI32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I32.
+    ReturnI64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I64.
+    ReturnF32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in F32.
+    ReturnF64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in F64.
+
     SingleEvalBegin = 0xE0, // IMM: NONE. Marks the beginning of Single Evaluation Block.
     SingleEvalEnd,          // IMM: NONE. Marks the ending of Single Evaluation Block.
+    LogicalShiftRight,      // IMM: INT $a. Pop one element, logical shift right $a bits, and push back onto stack.
+    MaskBitsZeroExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits and push back onto
+                        // stack.
+    MaskBitsSignExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits and sign extend to
+                        // 64-bit, and push back onto stack.
 
     MaxOpcodes = 0x100, // No opcodes can be allocated beyond 0xFF
     MetaLoadInt,        // IMM: INT $a. Meta-opcode used when calling Bytecode::pushInstruction.

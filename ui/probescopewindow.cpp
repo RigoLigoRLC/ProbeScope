@@ -1,5 +1,6 @@
 
 #include "probescopewindow.h"
+#include "plotareapanel.h"
 #include "probelibhost.h"
 #include "selectprobedialog.h"
 #include "symbolbackend.h"
@@ -9,8 +10,6 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QSettings>
-
-
 
 ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
     ui = new Ui::ProbeScopeWindow;
@@ -25,7 +24,6 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
     m_dockMgr = new ads::CDockManager(this);
     m_dockWelcomeBackground = new ads::CDockWidget(tr("Welcome"), this);
     m_dockSymbolPanel = new ads::CDockWidget(tr("Symbols"), this);
-
 
     // Initialize panels
     m_welcomeBackground = new WelcomeBackground(m_dockWelcomeBackground);
@@ -194,4 +192,16 @@ void ProbeScopeWindow::sltSelectProbe() {
         }
     }
     reevaluateConnectionRelatedWidgetEnableStates();
+}
+
+void ProbeScopeWindow::sltCreatePlotArea(size_t id) {
+    Q_ASSERT(!m_dockPlotAreas.contains(id) && !m_plotAreas.contains(id));
+
+    auto area = new PlotAreaPanel(id, m_workspace);
+    auto dock = new ads::CDockWidget(tr("Plot area %1").arg(id), this);
+    dock->setWidget(area);
+
+    m_dockMgr->addDockWidgetTab(ads::CenterDockWidgetArea, dock);
+    m_dockPlotAreas[id] = dock;
+    m_plotAreas[id] = area;
 }
