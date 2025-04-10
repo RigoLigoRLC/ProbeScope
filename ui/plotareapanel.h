@@ -17,6 +17,13 @@ public:
 
     void addPlot(size_t entryId);
     void removePlot(size_t entryId);
+    QVector<size_t> assignedPlots() { return m_watchEntryToGraphMapping.keys().toVector(); }
+
+    void replot() {
+        // ui->plot->replot(QCustomPlot::rpQueuedReplot);
+        ui->plot->xAxis->rescale();
+        ui->plot->replot();
+    }
 
 private slots:
     void plotPropertyChanged(size_t entryId, WatchEntryModel::Columns prop, QVariant data);

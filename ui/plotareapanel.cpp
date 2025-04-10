@@ -6,6 +6,8 @@ PlotAreaPanel::PlotAreaPanel(size_t areaId, WorkspaceModel *workspace, QWidget *
     : m_areaId(areaId), m_workspaceModel(workspace), QWidget(parent) {
     ui = new Ui::PlotAreaPanel;
     ui->setupUi(this);
+
+    ui->plot->yAxis->setRange(-10, 10);
 }
 
 PlotAreaPanel::~PlotAreaPanel() {

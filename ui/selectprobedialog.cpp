@@ -84,6 +84,10 @@ void SelectProbeDialog::on_cmbProbeLib_currentIndexChanged(int index) {
     selectProbeLib(m_availableProbeLibs[index]);
 }
 
+void SelectProbeDialog::on_listProbes_doubleClicked(QModelIndex index) {
+    on_btnSelect_clicked();
+}
+
 void SelectProbeDialog::on_btnRescan_clicked() {
     ui->listProbes->clear();
     QApplication::processEvents(); // Let user see we deleted all items

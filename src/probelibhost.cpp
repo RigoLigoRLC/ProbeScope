@@ -100,3 +100,57 @@ Result<void, QString> ProbeLibHost::connect() {
 void ProbeLibHost::disconnect() {
     m_probeSession.reset();
 }
+
+bool ProbeLibHost::getExclusiveLock(quintptr token) {
+    bool expected = false;
+    if (m_exclusivelyLocked.compare_exchange_strong(expected, true)) {
+        m_lockerToken = token;
+        return true;
+    }
+    return false;
+}
+
+bool ProbeLibHost::releaseExclusiveLock(quintptr token) {
+    bool expected = true;
+    if (token == m_lockerToken && m_exclusivelyLocked.compare_exchange_strong(expected, false)) {
+        return true;
+    }
+    return false;
+}
+
+probelib::ReadResult ProbeLibHost::readMemory8(uint64_t address, size_t count) {
+    if (auto checkResult = checkSession(); checkResult.isErr()) {
+        return Err(checkResult.unwrapErr());
+    }
+    return m_probeSession->get()->readMemory8(address, count);
+}
+
+probelib::ReadResult ProbeLibHost::readMemory16(uint64_t address, size_t count) {
+    if (auto checkResult = checkSession(); checkResult.isErr()) {
+        return Err(checkResult.unwrapErr());
+    }
+    return m_probeSession->get()->readMemory16(address, count);
+}
+
+probelib::ReadResult ProbeLibHost::readMemory32(uint64_t address, size_t count) {
+    if (auto checkResult = checkSession(); checkResult.isErr()) {
+        return Err(checkResult.unwrapErr());
+    }
+    return m_probeSession->get()->readMemory32(address, count);
+}
+
+probelib::ReadResult ProbeLibHost::readMemory64(uint64_t address, size_t count) {
+    if (auto checkResult = checkSession(); checkResult.isErr()) {
+        return Err(checkResult.unwrapErr());
+    }
+    return m_probeSession->get()->readMemory64(address, count);
+}
+
+/***************************************** INTERNAL UTILS *****************************************/
+
+Result<void, probelib::Error> ProbeLibHost::checkSession() {
+    if (!m_probeSession.has_value() || !m_probeSession.value()) {
+        return Err(probelib::Error{tr("Probe session not ready"), true, probelib::ErrorClass::SessionNotStarted});
+    }
+    return Ok();
+}

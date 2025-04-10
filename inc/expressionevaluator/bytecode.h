@@ -32,6 +32,8 @@ struct Bytecode {
 
     void execute(ExecutionState &state, std::function<bool(ExecutionState &, Opcode, ImmType)> runner);
 
+    static bool genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm);
+
 private:
     static bool checkIfRequiredImmediateValid(Opcode opcode, const std::optional<QVariant> &immediate);
 

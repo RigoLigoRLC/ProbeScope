@@ -69,7 +69,7 @@ TSParser *Parser::getTsParser() {
         INIT_TS_SYMBOL(num_dec);
         INIT_TS_SYMBOL(num_hex);
         INIT_TS_SYMBOL(num_bin);
-        INIT_TS_SYMBOL(ERROR_);
+        INIT_TS_SYMBOL(ERROR);
 
 #undef INIT_TS_SYMBOL
     });
@@ -205,6 +205,7 @@ Result<Bytecode, QString> Parser::parseToBytecode(QString expression) {
 
     // FIXME: When to use BaseEval?
     ret.pushInstruction(BaseEval, {});
+    ret.pushInstruction(ReturnAsBase, {});
 
     if (processResult.isErr()) {
         return Err(processResult.unwrapErr());

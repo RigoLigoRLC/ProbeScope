@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <variant>
 
 /**
@@ -14,5 +15,9 @@
 class IAcquisitionBufferChannel {
 public:
     using Value = std::variant<uint8_t, uint16_t, uint32_t, uint64_t, int8_t, int16_t, int32_t, int64_t, float, double>;
-    virtual void addDataPoint(size_t entryId, std::chrono::steady_clock::time_point timestamp, Value value);
+    using p = std::shared_ptr<IAcquisitionBufferChannel>;
+
+    virtual ~IAcquisitionBufferChannel(){};
+    virtual void addDataPoint(size_t entryId, std::chrono::steady_clock::time_point timestamp, Value value) = 0;
+    virtual void acquisitionFrequencyFeedback(size_t entryId, double frequency) = 0;
 };

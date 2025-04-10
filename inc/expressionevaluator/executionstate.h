@@ -27,6 +27,12 @@ struct ExecutionState {
     Flags regFlags;
 
     ExecutionState() : stack(8, 0), PC(0) {}
+
+    void resetAll() {
+        PC = 0;
+        stack.clear();
+        regFlags = Flags();
+    }
 };
 
 } // namespace ExpressionEvaluator

@@ -32,6 +32,7 @@ private:
 
 private slots:
     void on_cmbProbeLib_currentIndexChanged(int index);
+    void on_listProbes_doubleClicked(QModelIndex index);
     void on_btnRescan_clicked();
     void on_btnSelect_clicked();
     void on_btnClose_clicked();

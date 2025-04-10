@@ -24,16 +24,20 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
     m_dockMgr = new ads::CDockManager(this);
     m_dockWelcomeBackground = new ads::CDockWidget(tr("Welcome"), this);
     m_dockSymbolPanel = new ads::CDockWidget(tr("Symbols"), this);
+    m_dockWatchEntryPanel = new ads::CDockWidget(tr("Watch Entries"), this);
 
     // Initialize panels
     m_welcomeBackground = new WelcomeBackground(m_dockWelcomeBackground);
     m_dockWelcomeBackground->setWidget(m_welcomeBackground);
     m_symbolPanel = new SymbolPanel(m_dockSymbolPanel);
-    m_dockSymbolPanel->setWidget(m_symbolPanel);
+    m_dockSymbolPanel->setWidget(m_symbolPanel, ads::CDockWidget::ForceNoScrollArea);
+    m_watchEntryPanel = new WatchEntryPanel(m_dockWatchEntryPanel);
+    m_dockWatchEntryPanel->setWidget(m_watchEntryPanel, ads::CDockWidget::ForceNoScrollArea);
 
     // Place dockable panels to dock manager
     m_dockMgr->setCentralWidget(m_dockWelcomeBackground);
     m_dockMgr->addDockWidget(ads::LeftDockWidgetArea, m_dockSymbolPanel);
+    m_dockMgr->addDockWidget(ads::BottomDockWidgetArea, m_dockWatchEntryPanel);
 
     // Set up status bar
     // Use a widget to wrap around groups of objects to avoid vertical bars
@@ -88,13 +92,36 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
     m_workspace = new WorkspaceModel(this);
 
     m_symbolPanel->setSymbolBackend(m_workspace->getSymbolBackend());
+    m_watchEntryPanel->setModel(m_workspace->getWatchEntryModel());
 
     // Connect all the signals
     connect(m_btnSelectProbe, &QPushButton::clicked, this, &ProbeScopeWindow::sltSelectProbe);
+    connect(m_btnSelectDevice, &QPushButton::clicked, this, &ProbeScopeWindow::sltSelectDevice);
+    connect(m_btnToggleConnection, &QPushButton::clicked, this, &ProbeScopeWindow::sltToggleConnection);
 
     connect(m_symbolPanel->ui->btnOpenSymbolFile, &QPushButton::clicked, this, &ProbeScopeWindow::sltOpenSymbolFile);
     connect(m_symbolPanel->ui->btnReloadSymbolFile, &QPushButton::clicked, this,
             &ProbeScopeWindow::sltReloadSymbolFile);
+    connect(m_symbolPanel, &SymbolPanel::addWatchExpression,
+            [&](QString expr) { m_workspace->addWatchEntry(expr, {}); });
+
+    connect(m_workspace, &WorkspaceModel::requestAddPlotArea, this, &ProbeScopeWindow::sltCreatePlotArea);
+    connect(m_workspace, &WorkspaceModel::requestRemovePlotArea, this, &ProbeScopeWindow::sltRemovePlotArea);
+    connect(m_workspace, &WorkspaceModel::requestAssignGraphOnPlotArea, this,
+            &ProbeScopeWindow::sltAssignGraphOnPlotArea);
+    connect(m_workspace, &WorkspaceModel::requestUnassignGraphOnPlotArea, this,
+            &ProbeScopeWindow::sltUnassignGraphOnPlotArea);
+
+    // Actions
+    connect(ui->actionStartAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStartAcquisition);
+    connect(ui->actionStopAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStopAcquisition);
+
+    // UI internal signals
+    connect(&m_refreshTimer, &QTimer::timeout, this, &ProbeScopeWindow::sltRefreshTimerExpired);
+
+    // Init long-living dialogs
+    m_selectDeviceDialog = new SelectDeviceDialog(this);
+    m_selectProbeDialog = new SelectProbeDialog(this);
 
     // Misc initialization
     reevaluateConnectionRelatedWidgetEnableStates();
@@ -109,10 +136,13 @@ void ProbeScopeWindow::reevaluateConnectionRelatedWidgetEnableStates() {
     bool connected = probeLibHost->sessionActive();
     bool probeBusy = false; // Will be true when a probe is used for data acquisition, etc.
 
+    // TODO: Lock all buttons when a probe session is locked
     m_btnSelectDevice->setEnabled(probeLibHost->currentProbe() != nullptr);
-    m_btnToggleConnection->setEnabled(probeLibHost->currentProbe() != nullptr && probeLibHost->currentDevice() != 0);
+    m_btnToggleConnection->setEnabled((probeLibHost->currentProbe() != nullptr) &&
+                                      (probeLibHost->currentDevice() != 0));
 
     ui->actionProbeBenchmark->setEnabled(connected);
+    ui->actionProbeBenchmark->setIcon(QIcon::fromTheme(connected ? "connection-connected" : "connection-unconnected"));
 }
 
 Result<void, SymbolBackend::Error> ProbeScopeWindow::loadSymbolFile(QString symbolFileAbsPath) {
@@ -165,9 +195,18 @@ void ProbeScopeWindow::sltReloadSymbolFile() {
     loadSymbolFile(m_workspace->getSymbolFilePath());
 }
 
+void ProbeScopeWindow::sltStartAcquisition() {
+    m_workspace->notifyAcquisitionStarted();
+    m_refreshTimer.start(); // FIXME: This timer should be started and stopped based on workspace's state signals
+}
+
+void ProbeScopeWindow::sltStopAcquisition() {
+    m_workspace->notifyAcquisitionStopped();
+    m_refreshTimer.stop();
+}
+
 void ProbeScopeWindow::sltSelectProbe() {
     // NOTE: MUST ensure that acquisition is not running
-    SelectProbeDialog dialog(this);
 
     auto probeLibHost = m_workspace->getProbeLibHost();
     if (probeLibHost->probeLibs().isEmpty()) {
@@ -178,10 +217,10 @@ void ProbeScopeWindow::sltSelectProbe() {
         return;
     }
 
-    if (dialog.execWithState(probeLibHost->probeLibs(), probeLibHost->currentProbeLib(),
-                             probeLibHost->currentProbe())) {
-        auto probeLib = dialog.selectedProbeLib();
-        auto probe = dialog.selectedProbe();
+    if (m_selectProbeDialog->execWithState(probeLibHost->probeLibs(), probeLibHost->currentProbeLib(),
+                                           probeLibHost->currentProbe())) {
+        auto probeLib = m_selectProbeDialog->selectedProbeLib();
+        auto probe = m_selectProbeDialog->selectedProbe();
 
         auto result = probeLibHost->selectProbe(probeLib, probe);
         if (result.isErr()) {
@@ -194,14 +233,88 @@ void ProbeScopeWindow::sltSelectProbe() {
     reevaluateConnectionRelatedWidgetEnableStates();
 }
 
+void ProbeScopeWindow::sltSelectDevice() {
+    auto probeLibHost = m_workspace->getProbeLibHost();
+    Q_ASSERT(probeLibHost->currentProbeLib());
+
+    auto devices = probeLibHost->currentProbeLib()->supportedDevices();
+    auto currentDevice = probeLibHost->currentDevice();
+
+    if (m_selectDeviceDialog->execWithState(devices, currentDevice)) {
+        auto result = probeLibHost->selectDevice(m_selectDeviceDialog->selectedDevice());
+        if (result.isErr()) {
+            QMessageBox::critical(this, tr("Failed to select device"), result.unwrapErr());
+            m_lblDevice->setText(tr("No Device Selected"));
+        } else {
+            m_lblDevice->setText(tr("Device: %1").arg(m_selectDeviceDialog->selectedDeviceName()));
+        }
+    }
+    reevaluateConnectionRelatedWidgetEnableStates();
+};
+
+void ProbeScopeWindow::sltToggleConnection() {
+    //
+    auto probeLibHost = m_workspace->getProbeLibHost();
+
+    Q_ASSERT(probeLibHost);
+
+    if (!probeLibHost->sessionActive()) {
+        if (auto result = probeLibHost->connect(); result.isErr()) {
+            QMessageBox::critical(this, tr("Connect fail"), result.unwrapErr());
+            m_btnToggleConnection->setChecked(false);
+        }
+    } else {
+        probeLibHost->disconnect();
+    }
+    reevaluateConnectionRelatedWidgetEnableStates();
+}
+
 void ProbeScopeWindow::sltCreatePlotArea(size_t id) {
     Q_ASSERT(!m_dockPlotAreas.contains(id) && !m_plotAreas.contains(id));
 
     auto area = new PlotAreaPanel(id, m_workspace);
     auto dock = new ads::CDockWidget(tr("Plot area %1").arg(id), this);
-    dock->setWidget(area);
+    dock->setWidget(area, ads::CDockWidget::ForceNoScrollArea);
 
     m_dockMgr->addDockWidgetTab(ads::CenterDockWidgetArea, dock);
     m_dockPlotAreas[id] = dock;
     m_plotAreas[id] = area;
+}
+
+void ProbeScopeWindow::sltRemovePlotArea(size_t id) {
+    Q_ASSERT(m_dockPlotAreas.contains(id) && m_plotAreas.contains(id));
+
+    auto area = m_plotAreas.take(id);
+    auto dock = m_dockPlotAreas.take(id);
+
+    auto plots = area->assignedPlots();
+    for (auto entryId : plots) {
+        auto areasResult = m_workspace->getWatchEntryGraphProperty(entryId, WatchEntryModel::PlotAreas);
+        Q_ASSERT(areasResult.isOk());
+        auto newAreas = areasResult.unwrap().value<QSet<size_t>>();
+        newAreas.remove(id);
+        m_workspace->setWatchEntryGraphProperty(entryId, WatchEntryModel::PlotAreas, QVariant::fromValue(newAreas));
+    }
+}
+
+void ProbeScopeWindow::sltAssignGraphOnPlotArea(size_t entryId, size_t areaId) {
+    Q_ASSERT(m_dockPlotAreas.contains(areaId) && m_plotAreas.contains(areaId));
+
+    m_plotAreas[areaId]->addPlot(entryId);
+}
+
+void ProbeScopeWindow::sltUnassignGraphOnPlotArea(size_t entryId, size_t areaId) {
+    Q_ASSERT(m_dockPlotAreas.contains(areaId) && m_plotAreas.contains(areaId));
+
+    m_plotAreas[areaId]->removePlot(entryId);
+}
+
+void ProbeScopeWindow::sltRefreshTimerExpired() {
+    // Notify the workspace to pull acquisition data
+    m_workspace->pullBufferedAcquisitionData();
+
+    // Refresh UI
+    foreach (auto &i, m_plotAreas) {
+        i->replot();
+    }
 }

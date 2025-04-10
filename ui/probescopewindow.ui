@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1197</width>
-    <height>915</height>
+    <width>1579</width>
+    <height>1065</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,7 +19,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1197</width>
+     <width>1579</width>
      <height>22</height>
     </rect>
    </property>
@@ -32,9 +32,38 @@
    <addaction name="menuTools"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="toolbarAcquisitionControl">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionStartAcquisition"/>
+   <addaction name="actionStopAcquisition"/>
+  </widget>
   <action name="actionProbeBenchmark">
    <property name="text">
     <string>Probe Benchmark</string>
+   </property>
+  </action>
+  <action name="actionStartAcquisition">
+   <property name="text">
+    <string>Start Acquisition</string>
+   </property>
+   <property name="toolTip">
+    <string>Start data acquisition and plotting.</string>
+   </property>
+  </action>
+  <action name="actionStopAcquisition">
+   <property name="text">
+    <string>Stop Acquisition</string>
+   </property>
+   <property name="toolTip">
+    <string>Stop data acquisition and plotting.</string>
    </property>
   </action>
  </widget>

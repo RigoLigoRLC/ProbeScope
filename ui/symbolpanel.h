@@ -85,6 +85,9 @@ private:
     void dynamicPopulateChildForCU(QTreeWidgetItem *item);
     void dynamicPopulateChildForVarnode(QTreeWidgetItem *item);
     void insertNodeByVarnodeInfo(SymbolBackend::VariableNode info, QTreeWidgetItem *parent, size_t sortColIdx);
+
+signals:
+    void addWatchExpression(QString);
 };
 
 Q_DECLARE_METATYPE(SymbolPanel::VariableLocationDesc);

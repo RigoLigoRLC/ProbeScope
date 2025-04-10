@@ -18,6 +18,9 @@ public:
     virtual int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
+    // This one seems useless in our case
+    // virtual bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
+    void addRowForEntry(size_t entryId);
     virtual bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
 
     enum Columns {

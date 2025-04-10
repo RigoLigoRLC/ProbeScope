@@ -1,6 +1,9 @@
 
 #pragma once
 
+#include "acquisitionbufferchannel.h"
+#include "acquisitionhub.h"
+#include "atomic_queue/atomic_queue.h"
 #include "diskbackedstorage.h"
 #include "expressionevaluator/bytecode.h"
 #include "models/watchentrymodel.h"
@@ -89,6 +92,19 @@ public:
     ProbeLibHost *const getProbeLibHost() const { return m_probeLibHost.get(); }
 
     /**
+     * @brief Get the acquisition buffer channel interface object. This object exists as a channel between acquisition
+     * thread and workspace model.
+     * @return IAcquisitionBufferChannel* const
+     */
+    IAcquisitionBufferChannel::p const getAcquisitionBufferChannel() { return m_acquisitionBuffer; }
+
+    /**
+     * @brief Get the Watch entry Qt model wrapper, when the UI part appropriately needs it
+     * @return WatchEntryModel*
+     */
+    WatchEntryModel *getWatchEntryModel() const { return m_watchEntryModel.get(); }
+
+    /**
      * @brief Builds the symbol tree for the current loaded symbol file.
      * @return On success: A list of root tree items. On fail: error code of SymbolBackend.
      */
@@ -155,10 +171,58 @@ public:
      */
     Result<void, Error> setWatchEntryGraphProperty(size_t entryId, WatchEntryModel::Columns prop, QVariant data);
 
+    /**
+     * @brief This function is called periodically by UI when acquisition is active, used to notify the backend to pull
+     * buffered data from the buffer channels and append them to each watch entry's graph data container.
+     */
+    Q_SLOT void pullBufferedAcquisitionData();
+
+    /**
+     * @brief This function is called by the UI or anywhere else that is able to start the acquisition to notify the
+     * workspace model that an acquisition session should begin.
+     */
+    void notifyAcquisitionStarted();
+
+    /**
+     * @brief This function is called by the UI or anywhere else that is able to start the acquisition to notify the
+     * workspace model that the acquisition session should stop.
+     */
+    void notifyAcquisitionStopped();
+
 private:
     size_t getNextPlotAreaId() { return m_maxPlotAreaId++; }
     size_t getNextWatchEntryId() { return m_maxWatchEntryId++; }
     QColor getPlotColorBasedOnEntryId(size_t id) { return m_defaultPlotColors[id % m_defaultPlotColors.size()]; }
+
+private:
+    class AcquisitionBuffer : public IAcquisitionBufferChannel {
+    public:
+        AcquisitionBuffer();
+        virtual ~AcquisitionBuffer() override;
+        using Clock = std::chrono::steady_clock;
+        using Timepoint = Clock::time_point;
+
+        virtual void addDataPoint(size_t entryId, Timepoint timestamp, Value value) override;
+        virtual void acquisitionFrequencyFeedback(size_t entryId, double frequency) override;
+
+        void addChannel(size_t entryId);
+        void removeChannel(size_t entryId);
+        void drainChannel(size_t entryId, std::function<void(Timepoint, Value)> processor);
+
+        static double valueToDouble(Value value);
+        static double timepointToMillisecond(Timepoint reference, Timepoint timepoint);
+
+    private:
+        static constexpr size_t Size = 1024;
+        using ChannelQueue = atomic_queue::AtomicQueue2<std::tuple<Timepoint, Value>, Size>;
+        struct Channel {
+            ChannelQueue queue;
+            double frequencyFeedback;
+            bool overflowFlag;
+        };
+
+        std::map<size_t, Channel> m_channels;
+    };
 
 private:
     bool m_isWorkspaceDirty = false; ///< Dirty flag, changed when anything modifies workspace and cleared on saving.
@@ -172,10 +236,13 @@ private:
     std::unique_ptr<SymbolBackend> m_symbolBackend;     ///< Symbol backend.
     std::unique_ptr<ProbeLibHost> m_probeLibHost;       ///< The object that does all communication with debug probes.
     std::unique_ptr<WatchEntryModel> m_watchEntryModel; ///< Qt Model interface to access watch entry data
+    std::unique_ptr<AcquisitionHub> m_acquisitionHub;
 
-    DiskBackedStorage m_backingStore; ///< Disk backed storage for data logging.
+    AcquisitionBuffer::Timepoint m_acquisitionStartTime; /// The timepoint when acquisition started
+    std::vector<QColor> m_defaultPlotColors;             ///< Default plot colors assigned based on watch entry ID
 
-    std::vector<QColor> m_defaultPlotColors; ///< Default plot colors assigned based on watch entry ID
+    std::shared_ptr<AcquisitionBuffer> m_acquisitionBuffer; ///< In-memory data buffer between acquisition thread and UI
+    DiskBackedStorage m_backingStore;                       ///< Disk backed storage for data logging.
 
 signals:
     void requestAddPlotArea(size_t areaId);

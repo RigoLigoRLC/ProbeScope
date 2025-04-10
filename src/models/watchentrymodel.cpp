@@ -33,8 +33,55 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
     }
 
     // Actual rows with data
-    // TODO: do the things
+    // TODO: how to deal with these unwraps? In C++ you can't `let result = match index.column {`
+    auto entry = m_watchEntryIds[index.row()];
+    switch (index.column()) {
+        case Color: {
+            switch (role) {
+                case Qt::DecorationRole: return m_workspace->getWatchEntryGraphProperty(entry, Color).unwrap();
+            }
+            break;
+        }
+        case DisplayName: {
+            switch (role) {
+                case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, DisplayName).unwrap();
+            }
+            break;
+        }
+        case Expression: {
+            switch (role) {
+                case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, Expression).unwrap();
+            }
+            break;
+        }
+        case PlotAreas: {
+            switch (role) {
+                case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, PlotAreas).unwrap();
+            }
+            break;
+        }
+        case Thickness: {
+            switch (role) {
+                case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, Thickness).unwrap();
+            }
+            break;
+        }
+        case LineStyle: {
+            switch (role) {
+                case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, LineStyle).unwrap();
+            }
+            break;
+        }
+    }
     return QVariant();
+}
+
+void WatchEntryModel::addRowForEntry(size_t entryId) {
+    emit beginInsertRows(QModelIndex(), rowCount(), rowCount());
+
+    m_watchEntryIds.append(entryId);
+
+    emit endInsertRows();
 }
 
 bool WatchEntryModel::removeRows(int row, int count, const QModelIndex &parent) {

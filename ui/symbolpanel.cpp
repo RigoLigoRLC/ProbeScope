@@ -11,7 +11,6 @@
 #include <QMessageBox>
 #include <QTreeWidget>
 
-
 SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     ui = new Ui::SymbolPanel;
     ui->setupUi(this);
@@ -164,6 +163,8 @@ void SymbolPanel::sltAddWatchEntryClicked() {
             qInfo().noquote() << optimizedBytecode.disassemble();
         }
     }
+
+    emit addWatchExpression(expr);
 }
 
 void SymbolPanel::sltTestEvalExprClicked() {

@@ -50,9 +50,15 @@
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="lblSymbolFileName">
-         <property name="text">
-          <string>(Not selected)</string>
+        <widget class="ElidedLabel" name="lblSymbolFileName">
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <property name="text" stdset="0">
+          <string>(Not Selected)</string>
          </property>
         </widget>
        </item>
@@ -205,6 +211,14 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ElidedLabel</class>
+   <extends>QFrame</extends>
+   <header>widgets/elidedlabel.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

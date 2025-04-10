@@ -1,12 +1,18 @@
 
 #pragma once
 
+#include "acquisitionhub.h"
+#include "plotareapanel.h"
+#include "selectdevicedialog.h"
+#include "selectprobedialog.h"
 #include "symbolpanel.h"
 #include "ui_probescopewindow.h"
+#include "watchentrypanel.h"
 #include "welcomebackground.h"
 #include "workspacemodel.h"
 #include <DockManager.h>
 #include <DockWidget.h>
+#include <QTimer>
 
 class ProbeScopeWindow : public QMainWindow {
     Q_OBJECT
@@ -30,12 +36,14 @@ private:
     ads::CDockManager *m_dockMgr;
     ads::CDockWidget *m_dockWelcomeBackground;
     ads::CDockWidget *m_dockSymbolPanel;
+    ads::CDockWidget *m_dockWatchEntryPanel;
     QMap<size_t, ads::CDockWidget *> m_dockPlotAreas;
 
     // Panel components
     WelcomeBackground *m_welcomeBackground;
     SymbolPanel *m_symbolPanel;
-    QMap<size_t, QWidget *> m_plotAreas; // TODO: Correct type for plot area
+    WatchEntryPanel *m_watchEntryPanel;
+    QMap<size_t, PlotAreaPanel *> m_plotAreas;
 
     // Status bar
     QLabel *m_lblConnection;
@@ -45,16 +53,38 @@ private:
     QPushButton *m_btnToggleConnection;
     QLabel *m_lblConnectionSpeed;
 
-    // Backend
+    // Long-living dialogs
+    SelectProbeDialog *m_selectProbeDialog;
+    SelectDeviceDialog *m_selectDeviceDialog;
+
+    // UI Bookkeeping
+    QTimer m_refreshTimer; ///< Timer for refreshing plot view
+
+    // Backend, where all the important stuff happens
     WorkspaceModel *m_workspace;
 
 private slots:
+    // Window
     void sltOpenSymbolFile();
     void sltReloadSymbolFile();
 
-    void sltSelectProbe();
+    // Actions
+    void sltStartAcquisition();
+    void sltStopAcquisition();
 
+    // Status bar
+    void sltSelectProbe();
+    void sltSelectDevice();
+    void sltToggleConnection();
+
+    // From backend
     void sltCreatePlotArea(size_t id);
+    void sltRemovePlotArea(size_t id);
+    void sltAssignGraphOnPlotArea(size_t entryId, size_t areaId);
+    void sltUnassignGraphOnPlotArea(size_t entryId, size_t areaId);
+
+    // UI Internal
+    void sltRefreshTimerExpired();
 
 signals:
     void plotAreaClosed(size_t id);

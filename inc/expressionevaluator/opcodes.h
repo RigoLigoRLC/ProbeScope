@@ -84,16 +84,17 @@ enum Opcode {
     Deref32,       // IMM: NONE. Pop one element as address, read 4 bytes of device memory there and push it onto stack.
     Deref64,       // IMM: NONE. Pop one element as address, read 8 bytes of device memory there and push it onto stack.
 
-    ReturnU8 = 0xD0, // IMM: NONE. Pop one element and end execution with this element as the execution result in U8.
-    ReturnU16,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U16.
-    ReturnU32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U32.
-    ReturnU64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in U64.
-    ReturnI8,        // IMM: NONE. Pop one element and end execution with this element as the execution result in I8.
-    ReturnI16,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I16.
-    ReturnI32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I32.
-    ReturnI64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in I64.
-    ReturnF32,       // IMM: NONE. Pop one element and end execution with this element as the execution result in F32.
-    ReturnF64,       // IMM: NONE. Pop one element and end execution with this element as the execution result in F64.
+    ReturnAsBase = 0xD0, // IMM: NONE. Pop one element and end execution with this element as result in BaseType.
+    ReturnU8,  // IMM: NONE. Pop one element and end execution with this element as the execution result in U8.
+    ReturnU16, // IMM: NONE. Pop one element and end execution with this element as the execution result in U16.
+    ReturnU32, // IMM: NONE. Pop one element and end execution with this element as the execution result in U32.
+    ReturnU64, // IMM: NONE. Pop one element and end execution with this element as the execution result in U64.
+    ReturnI8,  // IMM: NONE. Pop one element and end execution with this element as the execution result in I8.
+    ReturnI16, // IMM: NONE. Pop one element and end execution with this element as the execution result in I16.
+    ReturnI32, // IMM: NONE. Pop one element and end execution with this element as the execution result in I32.
+    ReturnI64, // IMM: NONE. Pop one element and end execution with this element as the execution result in I64.
+    ReturnF32, // IMM: NONE. Pop one element and end execution with this element as the execution result in F32.
+    ReturnF64, // IMM: NONE. Pop one element and end execution with this element as the execution result in F64.
 
     SingleEvalBegin = 0xE0, // IMM: NONE. Marks the beginning of Single Evaluation Block.
     SingleEvalEnd,          // IMM: NONE. Marks the ending of Single Evaluation Block.

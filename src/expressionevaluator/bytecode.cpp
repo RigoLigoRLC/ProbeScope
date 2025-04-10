@@ -188,6 +188,96 @@ void Bytecode::execute(ExecutionState &state, std::function<bool(ExecutionState 
             break;
         }
     }
+
+    // If at last the execution finished, reset the execution state
+    if (state.PC == instructions.size()) {
+        state.resetAll();
+    }
+}
+
+bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm) {
+    union {
+        uint64_t u;
+        int64_t i;
+    } tmp1, tmp2;
+    switch (op) {
+        case Nop: return true;
+        case LoadI16:
+        case LoadU16:
+        case LoadI32:
+        case LoadU32:
+        case LoadI64:
+        case LoadU64: es.stack.push_back(std::get<uint64_t>(imm)); return true;
+        case AddI16:
+        case AddI32:
+        case AddI64: es.stack.back() += std::get<uint64_t>(imm); return true;
+        case MulI16:
+        case MulI32:
+        case MulI64: {
+            tmp1.u = es.stack.back();
+            tmp2.u = std::get<uint64_t>(imm);
+            es.stack.back() = tmp1.i * tmp2.i;
+            return true;
+        }
+        case LogicalShiftRight: es.stack.back() >>= std::get<uint64_t>(imm); return true;
+        case MaskBitsZeroExtend: es.stack.back() &= ((~0ull) >> (64 - std::get<uint64_t>(imm))); return true;
+        case MaskBitsSignExtend: {
+            auto bits = std::get<uint64_t>(imm);
+            es.stack.back() &= ((~0ull) >> (64 - bits));
+            if (es.stack.back() & (1ull << (bits - 1))) {
+                es.stack.back() |= ((~0ull) << bits);
+            }
+            return true;
+        }
+        case MaxOpcodes:
+        case LoadBase:
+        case BaseResetScope:
+        case BaseLoadScope:
+        case BaseCast:
+        case BaseDeref:
+        case BaseMember:
+        case BaseEval:
+        case TypeResetScope:
+        case TypeLoadScope:
+        case TypeLoadType:
+        case TypeModifyPtr:
+        case TypeModifyArr:
+        case OffsetI16:
+        case OffsetI32:
+        case OffsetI64:
+        case TypeLoadU8:
+        case TypeLoadU16:
+        case TypeLoadU32:
+        case TypeLoadU64:
+        case TypeLoadI8:
+        case TypeLoadI16:
+        case TypeLoadI32:
+        case TypeLoadI64:
+        case TypeLoadF32:
+        case TypeLoadF64:
+        case ReturnAsBase:
+        case SingleEvalBegin:
+        case SingleEvalEnd:
+        case MetaLoadInt:
+        case MetaAddInt:
+        case MetaMulInt:
+        case MetaOffsetInt: Q_UNREACHABLE(); // These shouldn't be passed to this generic computation executor
+        case Deref8:
+        case Deref16:
+        case Deref32:
+        case Deref64:
+        case ReturnU8:
+        case ReturnU16:
+        case ReturnU32:
+        case ReturnU64:
+        case ReturnI8:
+        case ReturnI16:
+        case ReturnI32:
+        case ReturnI64:
+        case ReturnF32:
+        case ReturnF64: return false;
+    }
+    return false;
 }
 
 /***************************************** INTERNAL UTILS *****************************************/

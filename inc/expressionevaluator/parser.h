@@ -8,6 +8,11 @@
 #include <result.h>
 #include <tree_sitter/api.h>
 
+// Somewhere in my program there is an inclusion to Wingdi.h which introduces an extraneous ERROR definition
+// This is absolutely totally stupidity so I terminate it here
+#ifdef ERROR
+#undef ERROR
+#endif
 
 struct TSLanguage;
 
@@ -60,7 +65,7 @@ private:
         uint32_t num_dec;
         uint32_t num_hex;
         uint32_t num_bin;
-        uint32_t ERROR_;
+        uint32_t ERROR;
     };
     static NodeSymbols id;
     // clang-format on
