@@ -213,9 +213,10 @@ private:
         static double timepointToMillisecond(Timepoint reference, Timepoint timepoint);
 
     private:
-        static constexpr size_t Size = 1024;
-        using ChannelQueue = atomic_queue::AtomicQueue2<std::tuple<Timepoint, Value>, Size>;
+        static constexpr size_t Size = 8192;
+        using ChannelQueue = atomic_queue::AtomicQueueB2<std::tuple<Timepoint, Value>>;
         struct Channel {
+            Channel() : queue(Size) {} // FIXME: Make queue size editable in settings
             ChannelQueue queue;
             double frequencyFeedback;
             bool overflowFlag;
