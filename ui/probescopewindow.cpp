@@ -111,6 +111,8 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
             &ProbeScopeWindow::sltAssignGraphOnPlotArea);
     connect(m_workspace, &WorkspaceModel::requestUnassignGraphOnPlotArea, this,
             &ProbeScopeWindow::sltUnassignGraphOnPlotArea);
+    connect(m_workspace, &WorkspaceModel::feedbackAcquisitionStopped, this,
+            &ProbeScopeWindow::sltAcquisitionThreadStopped);
 
     // Actions
     connect(ui->actionStartAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStartAcquisition);
@@ -142,7 +144,8 @@ void ProbeScopeWindow::reevaluateConnectionRelatedWidgetEnableStates() {
                                       (probeLibHost->currentDevice() != 0));
 
     ui->actionProbeBenchmark->setEnabled(connected);
-    ui->actionProbeBenchmark->setIcon(QIcon::fromTheme(connected ? "connection-connected" : "connection-unconnected"));
+    m_btnToggleConnection->setIcon(QIcon::fromTheme(connected ? "connection-connected" : "connection-unconnected"));
+    m_lblConnectionSpeed->setText(connected ? tr("Connected") : tr("Unconnected"));
 }
 
 Result<void, SymbolBackend::Error> ProbeScopeWindow::loadSymbolFile(QString symbolFileAbsPath) {
@@ -202,7 +205,6 @@ void ProbeScopeWindow::sltStartAcquisition() {
 
 void ProbeScopeWindow::sltStopAcquisition() {
     m_workspace->notifyAcquisitionStopped();
-    m_refreshTimerShouldStop = true;
 }
 
 void ProbeScopeWindow::sltSelectProbe() {
@@ -307,6 +309,10 @@ void ProbeScopeWindow::sltUnassignGraphOnPlotArea(size_t entryId, size_t areaId)
     Q_ASSERT(m_dockPlotAreas.contains(areaId) && m_plotAreas.contains(areaId));
 
     m_plotAreas[areaId]->removePlot(entryId);
+}
+
+void ProbeScopeWindow::sltAcquisitionThreadStopped() {
+    m_refreshTimerShouldStop = true;
 }
 
 void ProbeScopeWindow::sltRefreshTimerExpired() {

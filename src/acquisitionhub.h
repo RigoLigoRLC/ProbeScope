@@ -103,4 +103,8 @@ private:
 
     // All acquisition entries
     QMap<size_t, AcquisitionEntry> m_acquisitionEntries;
+
+signals:
+    // Signals from acquisition thread. PLEASE CONNECT WITH Qt::QueuedConnection!
+    void acquisitionStopped();
 };

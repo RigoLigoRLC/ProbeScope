@@ -121,7 +121,9 @@ QString Bytecode::disassemble(bool integerInHex) {
     return ret;
 }
 
-void Bytecode::execute(ExecutionState &state, std::function<bool(ExecutionState &, Opcode, ImmType)> runner) {
+Bytecode::ExecutionResult
+    Bytecode::execute(ExecutionState &state,
+                      std::function<Bytecode::ExecutionResult(ExecutionState &, Opcode, ImmType)> runner) {
     auto getImmIndex = [this](size_t &offset) -> auto {
         uint16_t ret = instructions.at(offset);
         ++offset;
@@ -138,10 +140,11 @@ void Bytecode::execute(ExecutionState &state, std::function<bool(ExecutionState 
         qCritical() << "Bytecode execution PC overflow: insn count" << instructions.size() << "PC=" << state.PC;
         qCritical() << disassemble();
         state.PC = 0;
-        return;
+        return InvalidPC;
     }
 
     // Try execute all instructions if the executor is satisfied
+    ExecutionResult ret;
     for (auto &PC = state.PC; PC < instructions.size(); ++PC) {
         // Fetch instruction and immediate
         uint8_t insn = instructions.at(PC);
@@ -182,17 +185,25 @@ void Bytecode::execute(ExecutionState &state, std::function<bool(ExecutionState 
         }
 
         // Give it to execution engine and see if it wants to continue
-        if (!runner(state, Opcode(insn), imm)) {
-            // FIXME: halt reason? Finished? Error? MemAccess?
-            ++PC;
-            break;
+        // qDebug() << "Executing" << Opcode(insn);
+        switch (ret = runner(state, Opcode(insn), imm)) {
+            case Completed: break;
+            case Continue: continue;
+            case MemAccess: ++PC; break;
+            case BeginErrors:
+            case ErrorBreak: break;
+            case InvalidPC: return InvalidPC;
         }
+        break;
     }
 
     // If at last the execution finished, reset the execution state
     if (state.PC == instructions.size()) {
         state.resetAll();
+        ret = Completed;
     }
+
+    return ret;
 }
 
 bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm) {

@@ -92,6 +92,8 @@ WorkspaceModel::WorkspaceModel(QObject *parent) : QObject(parent) {
     // Create acquisition hub
     m_acquisitionHub = std::make_unique<AcquisitionHub>(m_probeLibHost.get(), this);
     m_acquisitionHub->setAcquisitionBufferChannel(getAcquisitionBufferChannel());
+    connect(m_acquisitionHub.get(), &AcquisitionHub::acquisitionStopped, this,
+            &WorkspaceModel::feedbackAcquisitionStopped, Qt::QueuedConnection);
 
     // TODO: Make default colors adjustable
     // Colors arbitrarily picked from https://gist.github.com/afcotroneo/716a864e9f7ba1bde4d2100313ad9f75/

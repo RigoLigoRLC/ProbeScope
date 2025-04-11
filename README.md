@@ -2,6 +2,8 @@
 
 Real time variable acquisition, data plotting, RTT terminal, etc via debug probe (ST-Link, CMSIS DAP Link).
 
+This project started as a side-project when I was participating in RoboMaster competition, and it gradually evolved into my undergraduate dissertation. As a result, please expect poor code quality. 🙂
+
 # Building
 
 Make sure Rust toolchain is installed and `cargo` is in PATH.

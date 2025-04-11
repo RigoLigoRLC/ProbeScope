@@ -9,7 +9,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
     ExecutionState es;
 
     bool definingBase = false, definingType = false;
-    bytecode.execute(es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> bool {
+    bytecode.execute(es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
         switch (op) {
             // Base defining
             case BaseResetScope: es.regBaseScope = symbolBackend->getRootScope(); break;
@@ -34,7 +34,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                 if (childInfoResult.isErr()) {
                     err = QObject::tr("%1 does not have a child named %2")
                               .arg(es.regBaseType->fullyQualifiedName(), std::get<QString>(imm));
-                    return false;
+                    return Bytecode::ErrorBreak;
                 }
                 auto childInfo = childInfoResult.unwrap();
                 if (childInfo.flags & TypeChildInfo::Bitfield) {
@@ -79,7 +79,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                     case IType::Kind::Union:
                     case IType::Kind::Enumeration:
                         err = QObject::tr("Got a non-numeric type on evaluation");
-                        return false;
+                        return Bytecode::ErrorBreak;
                 }
                 es.regFlags |= ExecutionState::MemberEvaluated;
                 break;
@@ -87,7 +87,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
             case ReturnAsBase: {
                 if (!es.regFlags.testFlag(ExecutionState::MemberEvaluated)) {
                     err = "Internal error: Member not evaluated before return";
-                    return false;
+                    return Bytecode::ErrorBreak;
                 }
                 switch (es.regBaseType->kind()) {
                     case IType::Kind::Uint8: ret.pushInstruction(ReturnU8, {}); break;
@@ -103,7 +103,9 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                     case IType::Kind::Unsupported:
                     case IType::Kind::Structure:
                     case IType::Kind::Union:
-                    case IType::Kind::Enumeration: err = QObject::tr("Got a non-numeric type on return"); return false;
+                    case IType::Kind::Enumeration:
+                        err = QObject::tr("Got a non-numeric type on return");
+                        return Bytecode::ErrorBreak;
                 }
                 break;
             }
@@ -117,7 +119,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                 }
             }
         }
-        return true;
+        return Bytecode::Continue;
     });
 
     if (es.PC != bytecode.instructions.size() && !err.isNull()) {

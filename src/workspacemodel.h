@@ -252,6 +252,8 @@ signals:
     void requestRemovePlotArea(size_t areaId);
     void requestAssignGraphOnPlotArea(size_t entryId, size_t areaId);
     void requestUnassignGraphOnPlotArea(size_t entryId, size_t areaId);
+
+    void feedbackAcquisitionStopped();
 };
 
 Q_DECLARE_METATYPE(QSet<size_t>);

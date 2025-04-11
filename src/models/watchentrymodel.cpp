@@ -14,7 +14,7 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
     if (index.row() == rowForManualAppend()) {
         // The "Double click to add watch entry" row
         if (index.column() != Columns::Expression) {
-            // Rows other than "Expression" are empty and non editable
+            // Columns other than "Expression" are empty and non editable
             switch (role) {
                 case Qt::EditRole: return false;
                 default: return QVariant();
@@ -74,6 +74,49 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
         }
     }
     return QVariant();
+}
+
+QVariant WatchEntryModel::headerData(int section, Qt::Orientation orientation, int role) const {
+    auto super = [&]() { return QAbstractTableModel::headerData(section, orientation, role); };
+    if (orientation == Qt::Vertical) {
+        return super();
+    }
+
+    // We only deal with horizontal header
+    switch (Columns(section)) {
+        case Color:
+            switch (role) {
+                case Qt::DisplayRole: return QString();
+                default: break;
+            }
+        case DisplayName:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Display name");
+                default: break;
+            }
+        case Expression:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Expression");
+                default: break;
+            }
+        case PlotAreas:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Plot areas");
+                default: break;
+            }
+        case Thickness:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Thickness");
+                default: break;
+            }
+        case LineStyle:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Line style");
+                default: break;
+            }
+        default: break;
+    }
+    return super();
 }
 
 void WatchEntryModel::addRowForEntry(size_t entryId) {

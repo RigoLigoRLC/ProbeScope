@@ -26,21 +26,19 @@ struct Bytecode {
 
     using ImmType = std::variant<std::nullopt_t, uint64_t, QString>;
 
+    enum ExecutionResult { Completed, Continue, MemAccess, BeginErrors, ErrorBreak, InvalidPC };
+
     bool pushInstruction(Opcode opcode, std::optional<QVariant> immediate);
-
     QString disassemble(bool integerInHex = true);
-
-    void execute(ExecutionState &state, std::function<bool(ExecutionState &, Opcode, ImmType)> runner);
-
+    ExecutionResult execute(ExecutionState &state,
+                            std::function<ExecutionResult(ExecutionState &, Opcode, ImmType)> runner);
     static bool genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm);
 
 private:
     static bool checkIfRequiredImmediateValid(Opcode opcode, const std::optional<QVariant> &immediate);
 
     uint16_t handleIntegerImmediates(Opcode opcode, const QVariant immediate);
-
     uint16_t handleIntegerImmediatesWithUnsignedRange(Opcode opcode, const QVariant &immediate);
-
     uint16_t handleIntegerImmediatesWithoutUnsignedRange(Opcode opcode, const QVariant &immediate);
 
     std::variant<uint64_t, int64_t> getIntegerImmediateFromQVariant(const QVariant &immediate);

@@ -84,6 +84,8 @@ private slots:
     void sltAssignGraphOnPlotArea(size_t entryId, size_t areaId);
     void sltUnassignGraphOnPlotArea(size_t entryId, size_t areaId);
 
+    void sltAcquisitionThreadStopped();
+
     // UI Internal
     void sltRefreshTimerExpired();
 

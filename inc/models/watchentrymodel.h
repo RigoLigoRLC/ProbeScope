@@ -18,6 +18,8 @@ public:
     virtual int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
+    virtual QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+
     // This one seems useless in our case
     // virtual bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
     void addRowForEntry(size_t entryId);

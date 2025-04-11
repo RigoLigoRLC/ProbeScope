@@ -75,54 +75,62 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                 // so we don't waste too much time on a single expression
                 bool memAccessed = false;
                 using namespace ExpressionEvaluator;
-                it->bytecode.execute(it->es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> bool {
-                    auto memAccess = [&](uint64_t address) {
-                        // TODO: implement memory access on ProbeLibHost
-                    };
+                auto execResult = it->bytecode.execute(
+                    it->es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
+                        auto memAccess = [&](uint64_t address) {
+                            // TODO: implement memory access on ProbeLibHost
+                        };
 
-                    // Try generic executor
-                    if (Bytecode::genericComputationExecutor(es, op, imm)) {
-                        return true;
-                    }
+                        // Try generic executor
+                        if (Bytecode::genericComputationExecutor(es, op, imm)) {
+                            return Bytecode::Continue;
+                        }
 
-                    auto processRead = [&](probelib::ReadResult result) {
-                        if (result.isErr()) {
-                            qWarning() << "Read memory 8" << Qt::hex << es.stack.last() << "failed"
-                                       << result.unwrapErr().message;
-                            es.resetAll();
-                        } else {
-                            es.stack.last() = 0;
-                            memcpy(&es.stack.last(), result.unwrap().data(), result.unwrap().size());
+                        auto processRead = [&](probelib::ReadResult result) {
+                            if (result.isErr()) {
+                                qWarning() << "Read memory 8" << Qt::hex << es.stack.last() << "failed"
+                                           << result.unwrapErr().message;
+                                es.resetAll();
+                                return Bytecode::ErrorBreak;
+                            } else {
+                                es.stack.last() = 0;
+                                memcpy(&es.stack.last(), result.unwrap().data(), result.unwrap().size());
+                                return Bytecode::Continue;
+                            }
+                        };
+                        auto processReturn = [&]<typename T>(uint64_t word, T dummy) {
+                            T t;
+                            memcpy(&t, &word, sizeof(T));
+                            if (self->m_bufferChannel) {
+                                self->m_bufferChannel->addDataPoint(it.key(), now, t);
+                            }
+                        };
+                        // If generic executor can't handle it, we're facing some complex instructions
+                        switch (op) {
+                            // Memory accesses
+                            case Deref8: return processRead(self->m_plh->readMemory8(es.stack.last(), 1));
+                            case Deref16: return processRead(self->m_plh->readMemory16(es.stack.last(), 1));
+                            case Deref32: return processRead(self->m_plh->readMemory32(es.stack.last(), 1));
+                            case Deref64: return processRead(self->m_plh->readMemory64(es.stack.last(), 1));
+                            case ReturnU8: processReturn(es.stack.last(), uint8_t(0)); break;
+                            case ReturnU16: processReturn(es.stack.last(), uint16_t(0)); break;
+                            case ReturnU32: processReturn(es.stack.last(), uint32_t(0)); break;
+                            case ReturnU64: processReturn(es.stack.last(), uint64_t(0)); break;
+                            case ReturnI8: processReturn(es.stack.last(), int8_t(0)); break;
+                            case ReturnI16: processReturn(es.stack.last(), int16_t(0)); break;
+                            case ReturnI32: processReturn(es.stack.last(), int32_t(0)); break;
+                            case ReturnI64: processReturn(es.stack.last(), int64_t(0)); break;
+                            case ReturnF32: processReturn(es.stack.last(), float(0)); break;
+                            case ReturnF64: processReturn(es.stack.last(), double(0)); break;
+                            default: Q_UNREACHABLE(); return Bytecode::ErrorBreak;
                         }
-                    };
-                    auto processReturn = [&]<typename T>(uint64_t word, T dummy) {
-                        T t;
-                        memcpy(&t, &word, sizeof(T));
-                        if (self->m_bufferChannel) {
-                            self->m_bufferChannel->addDataPoint(it.key(), now, t);
-                        }
-                    };
-                    // If generic executor can't handle it, we're facing some complex instructions
-                    switch (op) {
-                        // Memory accesses
-                        case Deref8: processRead(self->m_plh->readMemory8(es.stack.last(), 1)); break;
-                        case Deref16: processRead(self->m_plh->readMemory16(es.stack.last(), 1)); break;
-                        case Deref32: processRead(self->m_plh->readMemory32(es.stack.last(), 1)); break;
-                        case Deref64: processRead(self->m_plh->readMemory64(es.stack.last(), 1)); break;
-                        case ReturnU8: processReturn(es.stack.last(), uint8_t(0)); break;
-                        case ReturnU16: processReturn(es.stack.last(), uint16_t(0)); break;
-                        case ReturnU32: processReturn(es.stack.last(), uint32_t(0)); break;
-                        case ReturnU64: processReturn(es.stack.last(), uint64_t(0)); break;
-                        case ReturnI8: processReturn(es.stack.last(), int8_t(0)); break;
-                        case ReturnI16: processReturn(es.stack.last(), int16_t(0)); break;
-                        case ReturnI32: processReturn(es.stack.last(), int32_t(0)); break;
-                        case ReturnI64: processReturn(es.stack.last(), int64_t(0)); break;
-                        case ReturnF32: processReturn(es.stack.last(), float(0)); break;
-                        case ReturnF64: processReturn(es.stack.last(), double(0)); break;
-                        default: Q_UNREACHABLE(); return false;
-                    }
-                    return true;
-                });
+                        return Bytecode::Continue;
+                    });
+
+                if (execResult >= Bytecode::BeginErrors) {
+                    qCritical() << "Severe execution error occured, acquisition stopping";
+                    self->stopAcquisition();
+                }
             }
         }
 
@@ -142,6 +150,7 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                         running = true;
                     } else if MATCH (RequestStopAcquisition) {
                         running = false;
+                        emit self->acquisitionStopped();
                     } else if MATCH (RequestExit) {
                         runLoop = false;
                     } else if MATCH (RequestAddEntry) {
