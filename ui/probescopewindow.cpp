@@ -11,7 +11,7 @@
 #include <QMessageBox>
 #include <QSettings>
 
-ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent) {
+ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_refreshTimerShouldStop(false) {
     ui = new Ui::ProbeScopeWindow;
     ui->setupUi(this);
 
@@ -202,7 +202,7 @@ void ProbeScopeWindow::sltStartAcquisition() {
 
 void ProbeScopeWindow::sltStopAcquisition() {
     m_workspace->notifyAcquisitionStopped();
-    m_refreshTimer.stop();
+    m_refreshTimerShouldStop = true;
 }
 
 void ProbeScopeWindow::sltSelectProbe() {
@@ -311,10 +311,16 @@ void ProbeScopeWindow::sltUnassignGraphOnPlotArea(size_t entryId, size_t areaId)
 
 void ProbeScopeWindow::sltRefreshTimerExpired() {
     // Notify the workspace to pull acquisition data
-    m_workspace->pullBufferedAcquisitionData();
+    auto pulledData = m_workspace->pullBufferedAcquisitionData();
 
     // Refresh UI
     foreach (auto &i, m_plotAreas) {
         i->replot();
+    }
+
+    // Check stop flag
+    if (!pulledData && m_refreshTimerShouldStop) {
+        m_refreshTimer.stop();
+        m_refreshTimerShouldStop = false;
     }
 }

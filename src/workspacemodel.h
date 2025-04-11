@@ -174,8 +174,10 @@ public:
     /**
      * @brief This function is called periodically by UI when acquisition is active, used to notify the backend to pull
      * buffered data from the buffer channels and append them to each watch entry's graph data container.
+     * @return Whether any data has been successfully fetched. This is used for the UI to determine when to stop the
+     * refresh timer after acquisition has been requested to stop.
      */
-    Q_SLOT void pullBufferedAcquisitionData();
+    Q_SLOT bool pullBufferedAcquisitionData();
 
     /**
      * @brief This function is called by the UI or anywhere else that is able to start the acquisition to notify the

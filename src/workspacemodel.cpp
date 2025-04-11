@@ -267,16 +267,23 @@ Result<void, WorkspaceModel::Error>
     return Ok();
 }
 
-void WorkspaceModel::pullBufferedAcquisitionData() {
+bool WorkspaceModel::pullBufferedAcquisitionData() {
+    bool ret = false;
     for (auto it = m_watchEntries.cbegin(); it != m_watchEntries.cend(); ++it) {
         m_acquisitionBuffer->drainChannel(it.key(), [&](AcquisitionBuffer::Timepoint t, AcquisitionBuffer::Value v) {
+            ret = true;
             it->data->add({AcquisitionBuffer::timepointToMillisecond(m_acquisitionStartTime, t),
                            AcquisitionBuffer::valueToDouble(v)});
         });
     }
+    return ret;
 }
 
 void WorkspaceModel::notifyAcquisitionStarted() {
+    // FIXME: When workspace still has data, notify the user whether to discard or save them
+    foreach (auto &i, m_watchEntries) {
+        i.data->clear();
+    }
     m_acquisitionStartTime = AcquisitionBuffer::Clock::now();
     m_acquisitionHub->startAcquisition();
 }

@@ -58,7 +58,8 @@ private:
     SelectDeviceDialog *m_selectDeviceDialog;
 
     // UI Bookkeeping
-    QTimer m_refreshTimer; ///< Timer for refreshing plot view
+    QTimer m_refreshTimer;         ///< Timer for refreshing plot view
+    bool m_refreshTimerShouldStop; ///< Timer stop flag. If the flag is set and not data is pulled, timer is stopped.
 
     // Backend, where all the important stuff happens
     WorkspaceModel *m_workspace;
