@@ -46,23 +46,47 @@ Result<void, Error> PSProbeSession::selectCore(size_t core) {
 }
 
 ReadResult PSProbeSession::readMemory8(size_t address, size_t count) {
-    return Ok(QByteArray(1, 0));
-    // return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
+    QByteArray ret(count, Qt::Initialization::Uninitialized);
+    auto code = psprobe_session_read_memory_8(m_session, m_coreSelected, address, count, ret.data());
+    if (code) {
+        return Err(Error{QObject::tr("Read memory error: Backend code: %1").arg(code), true,
+                         ErrorClass::UnspecifiedBackendError});
+    } else {
+        return Ok(ret);
+    }
 }
 
 ReadResult PSProbeSession::readMemory16(size_t address, size_t count) {
-    return Ok(QByteArray(2, 0));
-    // return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
+    QByteArray ret(count * 2, Qt::Initialization::Uninitialized);
+    auto code = psprobe_session_read_memory_16(m_session, m_coreSelected, address, count, ret.data());
+    if (code) {
+        return Err(Error{QObject::tr("Read memory error: Backend code: %1").arg(code), true,
+                         ErrorClass::UnspecifiedBackendError});
+    } else {
+        return Ok(ret);
+    }
 }
 
 ReadResult PSProbeSession::readMemory32(size_t address, size_t count) {
-    return Ok(QByteArray(4, 0));
-    // return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
+    QByteArray ret(count * 4, Qt::Initialization::Uninitialized);
+    auto code = psprobe_session_read_memory_32(m_session, m_coreSelected, address, count, ret.data());
+    if (code) {
+        return Err(Error{QObject::tr("Read memory error: Backend code: %1").arg(code), true,
+                         ErrorClass::UnspecifiedBackendError});
+    } else {
+        return Ok(ret);
+    }
 }
 
 ReadResult PSProbeSession::readMemory64(size_t address, size_t count) {
-    return Ok(QByteArray(8, 0));
-    // return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
+    QByteArray ret(count * 8, Qt::Initialization::Uninitialized);
+    auto code = psprobe_session_read_memory_64(m_session, m_coreSelected, address, count, ret.data());
+    if (code) {
+        return Err(Error{QObject::tr("Read memory error: Backend code: %1").arg(code), true,
+                         ErrorClass::UnspecifiedBackendError});
+    } else {
+        return Ok(ret);
+    }
 }
 
 Result<void, Error> PSProbeSession::writeMemory8(size_t address, const QByteArray &data) {

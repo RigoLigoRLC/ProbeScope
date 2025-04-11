@@ -117,6 +117,9 @@ Result<void, Error> PSProbe::setProtocol(WireProtocol protocol) {
         case WireProtocol::Unspecified:
             return Err(Error{tr("Cannot set unspecified protocol; this is only used as a return value"), true,
                              ErrorClass::BeginConnectionFailure});
+        default:
+            return Err(Error{tr("Specified unknown protocol ID %1").arg(uint32_t(protocol)), true,
+                             ErrorClass::BeginConnectionFailure});
     }
     auto result = psprobe_probe_set_protocol(m_currentProbe, proto);
     if (result) {

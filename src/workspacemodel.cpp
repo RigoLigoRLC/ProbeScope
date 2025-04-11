@@ -268,15 +268,16 @@ Result<void, WorkspaceModel::Error>
 }
 
 bool WorkspaceModel::pullBufferedAcquisitionData() {
-    bool ret = false;
+    size_t count = 0;
     for (auto it = m_watchEntries.cbegin(); it != m_watchEntries.cend(); ++it) {
         m_acquisitionBuffer->drainChannel(it.key(), [&](AcquisitionBuffer::Timepoint t, AcquisitionBuffer::Value v) {
-            ret = true;
+            ++count;
             it->data->add({AcquisitionBuffer::timepointToMillisecond(m_acquisitionStartTime, t),
                            AcquisitionBuffer::valueToDouble(v)});
         });
     }
-    return ret;
+    qDebug() << "Processed" << count << "sample points";
+    return count != 0;
 }
 
 void WorkspaceModel::notifyAcquisitionStarted() {
@@ -290,6 +291,15 @@ void WorkspaceModel::notifyAcquisitionStarted() {
 
 void WorkspaceModel::notifyAcquisitionStopped() {
     m_acquisitionHub->stopAcquisition();
+
+    // DEBUG: Write data point to disk
+    auto data = m_watchEntries[0].data;
+    QFile f("D:/tmp/acquisition.csv");
+    f.open(QFile::WriteOnly);
+    QTextStream ts(&f);
+    for (auto it = data->begin(); it != data->end(); it++) {
+        ts << it->mainKey() << ',' << it->mainValue() << ",\n";
+    }
 }
 
 /***************************************** INTERNAL UTILS *****************************************/

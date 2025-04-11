@@ -86,7 +86,7 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                     }
 
                     auto processRead = [&](probelib::ReadResult result) {
-                        if (auto result = self->m_plh->readMemory8(es.stack.last(), 1); result.isErr()) {
+                        if (result.isErr()) {
                             qWarning() << "Read memory 8" << Qt::hex << es.stack.last() << "failed"
                                        << result.unwrapErr().message;
                             es.resetAll();
