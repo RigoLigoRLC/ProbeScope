@@ -10,6 +10,7 @@ SelectDeviceDialog::SelectDeviceDialog(QWidget *parent) : QDialog(parent) {
 
     m_filterModel->setSourceModel(m_model.get());
     m_filterModel->setRecursiveFilteringEnabled(true);
+    m_filterModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
 
     ui->radJtag->setChecked(true);
     ui->treeDevices->setModel(m_filterModel.get());
