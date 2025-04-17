@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "acquisitionbuffer.h"
 #include "acquisitionbufferchannel.h"
 #include "acquisitionhub.h"
 #include "atomic_queue/atomic_queue.h"
@@ -191,41 +192,18 @@ public:
      */
     void notifyAcquisitionStopped();
 
+    /**
+     * @brief Get the acquisition status from the acquisition hub.
+     */
+    bool isAcquisitionActive() { return m_acquisitionHub->isAcquisitionActive(); }
+
 private:
     size_t getNextPlotAreaId() { return m_maxPlotAreaId++; }
     size_t getNextWatchEntryId() { return m_maxWatchEntryId++; }
     QColor getPlotColorBasedOnEntryId(size_t id) { return m_defaultPlotColors[id % m_defaultPlotColors.size()]; }
 
-private:
-    class AcquisitionBuffer : public IAcquisitionBufferChannel {
-    public:
-        AcquisitionBuffer();
-        virtual ~AcquisitionBuffer() override;
-        using Clock = std::chrono::steady_clock;
-        using Timepoint = Clock::time_point;
-
-        virtual void addDataPoint(size_t entryId, Timepoint timestamp, Value value) override;
-        virtual void acquisitionFrequencyFeedback(size_t entryId, double frequency) override;
-
-        void addChannel(size_t entryId);
-        void removeChannel(size_t entryId);
-        void drainChannel(size_t entryId, std::function<void(Timepoint, Value)> processor);
-
-        static double valueToDouble(Value value);
-        static double timepointToMillisecond(Timepoint reference, Timepoint timepoint);
-
-    private:
-        static constexpr size_t Size = 8192;
-        using ChannelQueue = atomic_queue::AtomicQueueB2<std::tuple<Timepoint, Value>>;
-        struct Channel {
-            Channel() : queue(Size) {} // FIXME: Make queue size editable in settings
-            ChannelQueue queue;
-            double frequencyFeedback;
-            bool overflowFlag;
-        };
-
-        std::map<size_t, Channel> m_channels;
-    };
+private slots:
+    void sltAcquisitionFrequencyFeedbackArrived(size_t entryId);
 
 private:
     bool m_isWorkspaceDirty = false; ///< Dirty flag, changed when anything modifies workspace and cleared on saving.

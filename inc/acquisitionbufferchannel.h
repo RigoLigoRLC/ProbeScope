@@ -19,5 +19,12 @@ public:
 
     virtual ~IAcquisitionBufferChannel(){};
     virtual void addDataPoint(size_t entryId, std::chrono::steady_clock::time_point timestamp, Value value) = 0;
+
+    /**
+     * @brief Call this function to provide feedback on actual acquisition frequency. This function should be called
+     * relatively infrequent because each call will cause the UI to refresh.
+     * @param entryId Watch entry ID.
+     * @param frequency frequency feedback value.
+     */
     virtual void acquisitionFrequencyFeedback(size_t entryId, double frequency) = 0;
 };

@@ -14,6 +14,9 @@ public:
         : QAbstractTableModel(parent), m_workspace(workspaceModel) {}
     virtual ~WatchEntryModel() {}
 
+    //
+    // Reimplemented functions
+    //
     virtual int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     virtual int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
@@ -25,6 +28,24 @@ public:
     void addRowForEntry(size_t entryId);
     virtual bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
 
+    //
+    // Interface functions
+    //
+
+    /**
+     * @brief When workspace receives a frequency feedback, this function is called to notify the UI to refresh
+     * acquisition frequency display.
+     * @param entryId Watch entry ID.
+     */
+    void notifyFrequencyFeedbackChanged(size_t entryId);
+
+    /**
+     * @brief This variant is called when acquisition starts or stops so that all the entries may switch between
+     * frequency limit and actual feedback.
+     */
+    void notifyFrequencyFeedbackChanged();
+
+
     enum Columns {
         Color,
         DisplayName,
@@ -32,6 +53,10 @@ public:
         PlotAreas,
         Thickness,
         LineStyle,
+        FrequencyLimit,
+
+        MaxColumns,
+        FrequencyFeedback,
     };
 
 private:

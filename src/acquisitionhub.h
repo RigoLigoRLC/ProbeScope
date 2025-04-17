@@ -22,6 +22,9 @@ public:
 
     void startAcquisition();
     void stopAcquisition();
+    bool isAcquisitionActive() const { return m_acquisitionRunning; }
+
+    void setFrequencyFeedbackReportInterval();
 
     void addWatchEntry(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode, int freqLimit);
     void removeWatchEntry(size_t entryId);
@@ -73,6 +76,10 @@ private:
         int frequencyLimit;
         std::chrono::steady_clock::time_point lastAcquisitionTime;
         std::chrono::steady_clock::duration minimumWaitDuration;
+
+        // Feedback context
+        std::chrono::steady_clock::time_point lastFeedbackTime;
+        size_t acquisitionCounter;
     };
 
     //
@@ -91,8 +98,13 @@ private:
     void startAcquisitionTimer();
     void stopAcquisitionTimer();
 
+    /// @brief This is read each time the acquisition starts
+    void readFrequencyFeedbackReportIntervalFromQSettings();
+
 private:
     ProbeLibHost *m_plh;
+
+    bool m_acquisitionRunning;
 
     // Acquisition thread, notification timer and synchronization primitives
     std::thread m_acquisitionThread;
@@ -103,6 +115,8 @@ private:
 
     // All acquisition entries
     QMap<size_t, AcquisitionEntry> m_acquisitionEntries;
+
+    std::chrono::milliseconds m_frequencyFeedbackReportInterval;
 
 signals:
     // Signals from acquisition thread. PLEASE CONNECT WITH Qt::QueuedConnection!

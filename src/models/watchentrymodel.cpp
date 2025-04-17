@@ -3,7 +3,7 @@
 #include "workspacemodel.h"
 
 int WatchEntryModel::columnCount(const QModelIndex &parent) const {
-    return parent.isValid() ? 0 : 6;
+    return parent.isValid() ? 0 : MaxColumns;
 };
 
 int WatchEntryModel::rowCount(const QModelIndex &parent) const {
@@ -35,7 +35,7 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
     // Actual rows with data
     // TODO: how to deal with these unwraps? In C++ you can't `let result = match index.column {`
     auto entry = m_watchEntryIds[index.row()];
-    switch (index.column()) {
+    switch (Columns(index.column())) {
         case Color: {
             switch (role) {
                 case Qt::DecorationRole: return m_workspace->getWatchEntryGraphProperty(entry, Color).unwrap();
@@ -72,6 +72,23 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
             }
             break;
         }
+        case FrequencyLimit: {
+            switch (role) {
+                case Qt::DisplayRole: {
+                    // Frequency limit column is a bit different: to save space, this column shows frequency feedback
+                    // when acquisition is live, and shows frequency limit when acquisition is not live.
+                    if (m_workspace->isAcquisitionActive()) {
+                        return m_workspace->getWatchEntryGraphProperty(entry, FrequencyFeedback).unwrap();
+                    } else {
+                        return m_workspace->getWatchEntryGraphProperty(entry, FrequencyLimit).unwrap();
+                    }
+                }
+            }
+        }
+
+        // These are never shown as a column
+        case MaxColumns:
+        case FrequencyFeedback: return QVariant();
     }
     return QVariant();
 }
@@ -111,12 +128,18 @@ QVariant WatchEntryModel::headerData(int section, Qt::Orientation orientation, i
             }
         case LineStyle:
             switch (role) {
-                case Qt::DisplayRole: return tr("Line style");
+                case Qt::DisplayRole: return tr("Style");
                 default: break;
             }
-        default: break;
+        case FrequencyLimit:
+            switch (role) {
+                case Qt::DisplayRole: return tr("Frequency");
+                default: break;
+            }
+        case MaxColumns:
+        case FrequencyFeedback: return super();
     }
-    return super();
+    return super(); // All unhandled cases goes to super
 }
 
 void WatchEntryModel::addRowForEntry(size_t entryId) {
@@ -145,4 +168,19 @@ bool WatchEntryModel::removeRows(int row, int count, const QModelIndex &parent) 
 
     emit endRemoveRows();
     return true;
+}
+
+void WatchEntryModel::notifyFrequencyFeedbackChanged(size_t entryId) {
+    // TODO: use a bimap implementation? There won't be a heck lot of entries, a linear search won't hurt
+    auto idx = m_watchEntryIds.indexOf(entryId);
+    if (idx == -1) {
+        qCritical() << "entryId" << entryId << "not inside watch entry model vec";
+        return;
+    }
+
+    emit dataChanged(index(idx, FrequencyLimit), index(idx, FrequencyLimit), {Qt::DisplayRole});
+}
+
+void WatchEntryModel::notifyFrequencyFeedbackChanged() {
+    emit dataChanged(index(0, FrequencyLimit), index(m_watchEntryIds.size(), FrequencyLimit), {Qt::DisplayRole});
 }

@@ -88,6 +88,8 @@ WorkspaceModel::WorkspaceModel(QObject *parent) : QObject(parent) {
 
     // Create acquisition buffer
     m_acquisitionBuffer = std::make_shared<AcquisitionBuffer>();
+    connect(m_acquisitionBuffer.get(), &AcquisitionBuffer::frequencyFeedbackArrived, this,
+            &WorkspaceModel::sltAcquisitionFrequencyFeedbackArrived, Qt::QueuedConnection);
 
     // Create acquisition hub
     m_acquisitionHub = std::make_unique<AcquisitionHub>(m_probeLibHost.get(), this);
@@ -253,6 +255,9 @@ Result<QVariant, WorkspaceModel::Error> WorkspaceModel::getWatchEntryGraphProper
         case WatchEntryModel::PlotAreas: return Ok(QVariant::fromValue(entry.associatedPlotAreas));
         case WatchEntryModel::Thickness: return Ok(QVariant(entry.plotThickness));
         case WatchEntryModel::LineStyle: return Ok(QVariant::fromValue(entry.plotStyle));
+        case WatchEntryModel::FrequencyLimit: return Ok(QVariant(entry.acquisitionFrequencyLimit));
+        case WatchEntryModel::FrequencyFeedback:
+            return Ok(QVariant(m_acquisitionBuffer->getChannelFrequencyFeedback(entryId)));
         default: return Ok(QVariant());
     }
 }
@@ -278,7 +283,7 @@ bool WorkspaceModel::pullBufferedAcquisitionData() {
                            AcquisitionBuffer::valueToDouble(v)});
         });
     }
-    qDebug() << "Processed" << count << "sample points";
+    // qDebug() << "Processed" << count << "sample points";
     return count != 0;
 }
 
@@ -294,7 +299,11 @@ void WorkspaceModel::notifyAcquisitionStarted() {
 void WorkspaceModel::notifyAcquisitionStopped() {
     m_acquisitionHub->stopAcquisition();
 
-    // DEBUG: Write data point to disk
+    // Let all entries display their limit value again
+    m_watchEntryModel->notifyFrequencyFeedbackChanged();
+
+// DEBUG: Write data point to disk
+#if 0
     auto data = m_watchEntries[0].data;
     QFile f("D:/tmp/acquisition.csv");
     f.open(QFile::WriteOnly);
@@ -302,102 +311,11 @@ void WorkspaceModel::notifyAcquisitionStopped() {
     for (auto it = data->begin(); it != data->end(); it++) {
         ts << it->mainKey() << ',' << it->mainValue() << ",\n";
     }
+#endif
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
-WorkspaceModel::AcquisitionBuffer::AcquisitionBuffer() : IAcquisitionBufferChannel() {
-    //
-}
 
-WorkspaceModel::AcquisitionBuffer::~AcquisitionBuffer() {
-    //
-}
-
-void WorkspaceModel::AcquisitionBuffer::addDataPoint(size_t entryId, std::chrono::steady_clock::time_point timestamp,
-                                                     Value value) {
-    if (auto channel = m_channels.find(entryId); channel == m_channels.end()) {
-        qCritical() << "AcquisitionBuffer: Does not have channel for entry" << entryId;
-        return;
-    } else if (auto result = channel->second.queue.try_push(std::move(std::pair{timestamp, value})); !result) {
-        qWarning() << "AcquisitionBuffer: Queue for channel" << entryId << "overflowed!";
-    }
-}
-
-void WorkspaceModel::AcquisitionBuffer::acquisitionFrequencyFeedback(size_t entryId, double frequency) {
-    if (auto channel = m_channels.find(entryId); channel == m_channels.end()) {
-        qCritical() << "AcquisitionBuffer: Does not have channel for entry" << entryId;
-        return;
-    } else {
-        channel->second.frequencyFeedback = frequency;
-    }
-}
-
-void WorkspaceModel::AcquisitionBuffer::addChannel(size_t entryId) {
-    if (m_channels.contains(entryId)) {
-        qCritical() << "AcquisitionBuffer: Already have channel for entry" << entryId;
-        return;
-    }
-
-    m_channels.try_emplace(entryId);
-}
-
-void WorkspaceModel::AcquisitionBuffer::removeChannel(size_t entryId) {
-    if (!m_channels.contains(entryId)) {
-        qCritical() << "AcquisitionBuffer: Does not have channel for entry" << entryId;
-        return;
-    }
-
-    m_channels.erase(entryId);
-}
-
-void WorkspaceModel::AcquisitionBuffer::drainChannel(size_t entryId, std::function<void(Timepoint, Value)> processor) {
-    if (!m_channels.contains(entryId)) {
-        qCritical() << "Does not have channel for entry" << entryId;
-        return;
-    }
-
-    std::tuple<Timepoint, Value> dataPoint;
-    while (m_channels.at(entryId).queue.try_pop(dataPoint)) {
-        auto [timepoint, value] = dataPoint;
-        processor(timepoint, value);
-    }
-}
-
-double WorkspaceModel::AcquisitionBuffer::valueToDouble(Value value) {
-    return std::visit(
-        [&](auto &&arg) -> double {
-            using T = std::decay_t<decltype(arg)>;
-#define MATCH(X) constexpr(std::is_same_v<T, X>)
-            // This is so fucking tedious you just return return return return return return return return
-            /*  */ if MATCH (uint8_t) {
-                return arg;
-            } else if MATCH (uint16_t) {
-                return arg;
-            } else if MATCH (uint32_t) {
-                return arg;
-            } else if MATCH (uint64_t) {
-                return arg;
-            } else if MATCH (int8_t) {
-                return arg;
-            } else if MATCH (int16_t) {
-                return arg;
-            } else if MATCH (int32_t) {
-                return arg;
-            } else if MATCH (int64_t) {
-                return arg;
-            } else if MATCH (float) {
-                return arg;
-            } else if MATCH (double) {
-                return arg;
-            } else {
-                qCritical() << "What the fuck type did I encounter";
-                return NAN;
-            }
-#undef MATCH
-        },
-        value);
-}
-
-double WorkspaceModel::AcquisitionBuffer::timepointToMillisecond(Timepoint reference, Timepoint timepoint) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint - reference).count() / 1000.0;
+void WorkspaceModel::sltAcquisitionFrequencyFeedbackArrived(size_t entryId) {
+    m_watchEntryModel->notifyFrequencyFeedbackChanged(entryId);
 }

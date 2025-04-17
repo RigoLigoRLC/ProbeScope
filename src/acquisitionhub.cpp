@@ -1,9 +1,10 @@
 
 #include "acquisitionhub.h"
 #include "probelibhost.h"
+#include <QSettings>
 
 AcquisitionHub::AcquisitionHub(ProbeLibHost *probeLibHost, QObject *parent)
-    : m_plh(probeLibHost), QObject(parent), m_acquisitionThread(acquisitionThread, this) {
+    : m_plh(probeLibHost), QObject(parent), m_acquisitionThread(acquisitionThread, this), m_acquisitionRunning(false) {
     //
 }
 
@@ -24,12 +25,7 @@ void AcquisitionHub::stopAcquisition() {
     sendRequest(RequestStopAcquisition{});
 }
 
-void AcquisitionHub::sendRequest(AcquisitionHub::RuntimeRequest &&request) {
-    // FIXME: what if the queue is really full?
-    while (!m_requestQueue.try_push(request))
-        ;
-    m_cond.notify_all();
-}
+void AcquisitionHub::setFrequencyFeedbackReportInterval() {}
 
 void AcquisitionHub::addWatchEntry(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode, int freqLimit) {
     sendRequest(RequestAddEntry{entryId, runtimeBytecode, freqLimit});
@@ -49,9 +45,16 @@ void AcquisitionHub::changeWatchEntryFrequencyLimit(size_t entryId, int freqLimi
 
 /***************************************** INTERNAL UTILS *****************************************/
 
+void AcquisitionHub::sendRequest(AcquisitionHub::RuntimeRequest &&request) {
+    // FIXME: what if the queue is really full?
+    while (!m_requestQueue.try_push(request))
+        ;
+    m_cond.notify_all();
+}
+
 void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
     //
-    bool running = false;
+    auto &running = self->m_acquisitionRunning;
     bool runLoop = true;
     std::unique_lock<std::mutex> lock(self->m_mutex);
     while (runLoop) {
@@ -77,10 +80,6 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                 using namespace ExpressionEvaluator;
                 auto execResult = it->bytecode.execute(
                     it->es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
-                        auto memAccess = [&](uint64_t address) {
-                            // TODO: implement memory access on ProbeLibHost
-                        };
-
                         // Try generic executor
                         if (Bytecode::genericComputationExecutor(es, op, imm)) {
                             return Bytecode::Continue;
@@ -104,6 +103,19 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                             if (self->m_bufferChannel) {
                                 self->m_bufferChannel->addDataPoint(it.key(), now, t);
                             }
+
+                            // Each time we return a value, we check if we need to report frequency feedback
+                            if (auto interval = now - it->lastFeedbackTime;
+                                interval >= self->m_frequencyFeedbackReportInterval) {
+                                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(interval).count();
+                                self->m_bufferChannel->acquisitionFrequencyFeedback(it.key(), it->acquisitionCounter *
+                                                                                                  1000.0 / ms);
+                                it->acquisitionCounter = 0;
+                                it->lastFeedbackTime = now;
+                            }
+
+                            // After checking feedback, we increment the acquisition counter
+                            ++it->acquisitionCounter;
                         };
                         // If generic executor can't handle it, we're facing some complex instructions
                         switch (op) {
@@ -148,6 +160,7 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
 #define MATCH(X) constexpr(std::is_same_v<T, X>)
                     /*  */ if MATCH (RequestStartAcquisition) {
                         running = true;
+                        self->readFrequencyFeedbackReportIntervalFromQSettings();
                     } else if MATCH (RequestStopAcquisition) {
                         running = false;
                         emit self->acquisitionStopped();
@@ -158,8 +171,10 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                             qCritical() << "AcquisitionHub already has entry" << arg.entryId;
                             return;
                         }
-                        self->m_acquisitionEntries[arg.entryId] = {
-                            .bytecode = arg.runtimeBytecode, .es = {}, .frequencyLimit = arg.acquisitionFrequencyLimit};
+                        self->m_acquisitionEntries[arg.entryId] = {.bytecode = arg.runtimeBytecode,
+                                                                   .es = {},
+                                                                   .frequencyLimit = arg.acquisitionFrequencyLimit,
+                                                                   .acquisitionCounter = 0};
                     } else if MATCH (RequestRemoveEntry) {
                         if (!self->m_acquisitionEntries.contains(arg.entryId)) {
                             qCritical() << "AcquisitionHub does not have entry" << arg.entryId;
@@ -195,4 +210,12 @@ void AcquisitionHub::startAcquisitionTimer() {
 
 void AcquisitionHub::stopAcquisitionTimer() {
     //
+}
+
+void AcquisitionHub::readFrequencyFeedbackReportIntervalFromQSettings() {
+    QSettings settings;
+    using namespace std::chrono_literals;
+
+    auto value = settings.value("Acquisition/FrequencyFeedbackReportInterval", 200).toInt();
+    m_frequencyFeedbackReportInterval = 1ms * value;
 }
