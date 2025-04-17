@@ -95,6 +95,10 @@ void SelectProbeDialog::on_btnRescan_clicked() {
 }
 
 void SelectProbeDialog::on_btnSelect_clicked() {
+    if (ui->listProbes->currentRow() < 0) {
+        return;
+    }
+
     m_selectedProbe = m_availableProbes[ui->listProbes->currentRow()];
     done(1);
 }
