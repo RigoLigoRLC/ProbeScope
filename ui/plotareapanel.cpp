@@ -32,6 +32,15 @@ void PlotAreaPanel::addPlot(size_t entryId) {
     graph->setData(dataContainerResult.unwrap());
 
     // TODO: set properties
+    // Set plot style things
+    auto pen = graph->pen();
+    pen.setStyle(m_workspaceModel->getWatchEntryGraphProperty(entryId, WatchEntryModel::LineStyle)
+                     .unwrap()
+                     .value<Qt::PenStyle>());
+    pen.setColor(
+        m_workspaceModel->getWatchEntryGraphProperty(entryId, WatchEntryModel::Color).unwrap().value<QColor>());
+    pen.setWidth(m_workspaceModel->getWatchEntryGraphProperty(entryId, WatchEntryModel::Thickness).unwrap().toInt());
+    graph->setPen(pen);
 
     m_watchEntryToGraphMapping[entryId] = graph;
 }
