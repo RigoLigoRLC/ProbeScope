@@ -16,6 +16,7 @@ PSProbeSession::PSProbeSession(void *session, std::function<void()> onDisconnect
 }
 
 PSProbeSession::~PSProbeSession() {
+    psprobe_session_close(m_session);
     m_disconnectCallback();
 }
 
