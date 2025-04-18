@@ -860,7 +860,7 @@ Option<QPair<int, Dwarf_Off>> SymbolBackend::dieOffsetGlobalToCuBased(Dwarf_Off 
         Q_ASSERT(targetCu.hasDie(globalOffset - targetCu.CuDieOff));
     }
 
-    return QPair{cuIdxIt.value(), globalOffset - m_cus[cuIdxIt.value()].CuDieOff};
+    return QPair<int, Dwarf_Off>{cuIdxIt.value(), globalOffset - m_cus[cuIdxIt.value()].CuDieOff};
 }
 
 Result<QPair<int, Dwarf_Off>, int> SymbolBackend::anyDeref(Dwarf_Attribute dw_attr, Dwarf_Bool *dw_is_info,

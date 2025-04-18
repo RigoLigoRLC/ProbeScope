@@ -1,7 +1,7 @@
 
 #include "probescopewindow.h"
 #include <qobject.h>
-#include <qtermwidget.h>
+// #include <qtermwidget.h>
 #include <singleapplication.h>
 
 
