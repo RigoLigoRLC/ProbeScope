@@ -19,7 +19,7 @@ add_subdirectory(cmake/corrosion)
 set(CMAKE_CXX_STANDARD 20)
 
 # Setup absolutely necessary Qt stuff
-set(QT_VERSION_MAJOR 5)
+set(QT_VERSION_MAJOR 6)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
@@ -28,11 +28,11 @@ qm_find_qt(Core Widgets PrintSupport Svg LinguistTools)
 # Import QTermWidget
 set(BUILD_STATIC ON)
 set(BUILD_EXAMPLES OFF)
-add_subdirectory(lib/libqtermwidget)
+# add_subdirectory(lib/libqtermwidget)
 
 # Import Qt ADS
 add_subdirectory(lib/Qt-Advanced-Docking-System)
-set_target_properties(qt5advanceddocking PROPERTIES
+set_target_properties(qt6advanceddocking PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
@@ -90,8 +90,8 @@ qm_configure_target(probescope
         ${QAS_SOURCES}
 
     LINKS_PRIVATE
-        qtermwidget
-        ads::qt5advanceddocking
+        # qtermwidget
+        ads::qt6advanceddocking
         SingleApplication::SingleApplication
         ${libdwarf_LINK_LIBRARIES}
         ${QCUSTOMPLOT_LINK_LIBRARIES}
