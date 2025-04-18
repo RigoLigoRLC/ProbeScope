@@ -55,7 +55,7 @@ void SelectDeviceDialog::repopulateModel(const QVector<probelib::DeviceCategory>
 
         for (auto [id, name] : category.devices) {
             auto deviceItem = new QStandardItem(name);
-            deviceItem->setData(id, DeviceIdRole);
+            deviceItem->setData(qulonglong(id), DeviceIdRole);
             deviceItem->setEditable(false);
             categoryItem->appendRow(deviceItem);
         }

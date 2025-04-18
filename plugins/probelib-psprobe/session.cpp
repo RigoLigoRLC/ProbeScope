@@ -46,7 +46,7 @@ Result<void, Error> PSProbeSession::selectCore(size_t core) {
     return Ok();
 }
 
-ReadResult PSProbeSession::readMemory8(size_t address, size_t count) {
+ReadResult PSProbeSession::readMemory8(uint64_t address, size_t count) {
     QByteArray ret(count, Qt::Initialization::Uninitialized);
     auto code = psprobe_session_read_memory_8(m_session, m_coreSelected, address, count, ret.data());
     if (code) {
@@ -57,7 +57,7 @@ ReadResult PSProbeSession::readMemory8(size_t address, size_t count) {
     }
 }
 
-ReadResult PSProbeSession::readMemory16(size_t address, size_t count) {
+ReadResult PSProbeSession::readMemory16(uint64_t address, size_t count) {
     QByteArray ret(count * 2, Qt::Initialization::Uninitialized);
     auto code = psprobe_session_read_memory_16(m_session, m_coreSelected, address, count, ret.data());
     if (code) {
@@ -68,7 +68,7 @@ ReadResult PSProbeSession::readMemory16(size_t address, size_t count) {
     }
 }
 
-ReadResult PSProbeSession::readMemory32(size_t address, size_t count) {
+ReadResult PSProbeSession::readMemory32(uint64_t address, size_t count) {
     QByteArray ret(count * 4, Qt::Initialization::Uninitialized);
     auto code = psprobe_session_read_memory_32(m_session, m_coreSelected, address, count, ret.data());
     if (code) {
@@ -79,7 +79,7 @@ ReadResult PSProbeSession::readMemory32(size_t address, size_t count) {
     }
 }
 
-ReadResult PSProbeSession::readMemory64(size_t address, size_t count) {
+ReadResult PSProbeSession::readMemory64(uint64_t address, size_t count) {
     QByteArray ret(count * 8, Qt::Initialization::Uninitialized);
     auto code = psprobe_session_read_memory_64(m_session, m_coreSelected, address, count, ret.data());
     if (code) {
@@ -90,19 +90,19 @@ ReadResult PSProbeSession::readMemory64(size_t address, size_t count) {
     }
 }
 
-Result<void, Error> PSProbeSession::writeMemory8(size_t address, const QByteArray &data) {
+Result<void, Error> PSProbeSession::writeMemory8(uint64_t address, const QByteArray &data) {
     return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
 }
 
-Result<void, Error> PSProbeSession::writeMemory16(size_t address, const QByteArray &data) {
+Result<void, Error> PSProbeSession::writeMemory16(uint64_t address, const QByteArray &data) {
     return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
 }
 
-Result<void, Error> PSProbeSession::writeMemory32(size_t address, const QByteArray &data) {
+Result<void, Error> PSProbeSession::writeMemory32(uint64_t address, const QByteArray &data) {
     return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
 }
 
-Result<void, Error> PSProbeSession::writeMemory64(size_t address, const QByteArray &data) {
+Result<void, Error> PSProbeSession::writeMemory64(uint64_t address, const QByteArray &data) {
     return Err(Error{"Not implemented", true, ErrorClass::UnspecifiedBackendError});
 }
 
