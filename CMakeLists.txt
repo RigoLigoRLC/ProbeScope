@@ -15,7 +15,7 @@ include(cmake/InplaceSetupQmsetup.cmake)
 include(cmake/InplaceSetupQasc.cmake)
 add_subdirectory(cmake/corrosion)
 
-# Set C++ standard  
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 
 # Setup absolutely necessary Qt stuff
@@ -32,7 +32,7 @@ set(BUILD_EXAMPLES OFF)
 
 # Import Qt ADS
 add_subdirectory(lib/Qt-Advanced-Docking-System)
-set_target_properties(qt6advanceddocking PROPERTIES
+set_target_properties(qtadvanceddocking-qt6 PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
@@ -91,7 +91,7 @@ qm_configure_target(probescope
 
     LINKS_PRIVATE
         # qtermwidget
-        ads::qt6advanceddocking
+        ads::qtadvanceddocking-qt6
         SingleApplication::SingleApplication
         ${libdwarf_LINK_LIBRARIES}
         ${QCUSTOMPLOT_LINK_LIBRARIES}
