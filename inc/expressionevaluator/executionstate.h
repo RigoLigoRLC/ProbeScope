@@ -26,7 +26,7 @@ struct ExecutionState {
     IType::p regType;
     Flags regFlags;
 
-    ExecutionState() : stack(8, 0), PC(0) {}
+    ExecutionState() : PC(0) { stack.reserve(8); }
 
     void resetAll() {
         PC = 0;

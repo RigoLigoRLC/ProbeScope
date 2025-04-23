@@ -12,13 +12,28 @@ namespace ExpressionEvaluator {
 // When adding an instruction that needs an immediate, you must add it to the sets here as well. And specifically for
 // integer immediates, you must add it into respective immediate category (I16, U16, ...etc) and the IntImmSet big set
 // together.
-static const std::set<uint8_t> IntImmSet{LoadU16, LoadI16,   AddI16,  MulI16,  OffsetI16, LoadU32, LoadI32,  AddI32,
-                                         MulI32,  OffsetI32, LoadU64, LoadI64, AddI64,    MulI64,  OffsetI64};
-static const std::set<uint8_t> U16ImmSet{LoadU16}, I16ImmSet{LoadI16, AddI16, MulI16, OffsetI16}, U32ImmSet{LoadU32},
-    I32ImmSet{LoadI32, AddI32, MulI32, OffsetI32}, U64ImmSet{LoadU64}, I64ImmSet{LoadI64, AddI64, MulI64, OffsetI64};
+static const std::set<uint8_t> IntImmSet{MaskBitsZeroExtend,
+                                         MaskBitsSignExtend,
+                                         LogicalShiftRight,
+                                         LoadU16,
+                                         LoadI16,
+                                         AddI16,
+                                         MulI16,
+                                         OffsetI16,
+                                         LoadU32,
+                                         LoadI32,
+                                         AddI32,
+                                         MulI32,
+                                         OffsetI32,
+                                         LoadU64,
+                                         LoadI64,
+                                         AddI64,
+                                         MulI64,
+                                         OffsetI64};
+static const std::set<uint8_t> U16ImmSet{LoadU16, MaskBitsZeroExtend, MaskBitsSignExtend, LogicalShiftRight},
+    I16ImmSet{LoadI16, AddI16, MulI16, OffsetI16}, U32ImmSet{LoadU32}, I32ImmSet{LoadI32, AddI32, MulI32, OffsetI32},
+    U64ImmSet{LoadU64}, I64ImmSet{LoadI64, AddI64, MulI64, OffsetI64};
 static const std::set<uint8_t> StrImmSet{LoadBase, BaseLoadScope, BaseMember, TypeLoadScope, TypeLoadType};
-
-
 
 bool Bytecode::pushInstruction(Opcode opcode, std::optional<QVariant> immediate) {
     if (!checkIfRequiredImmediateValid(opcode, immediate)) {
@@ -30,7 +45,9 @@ bool Bytecode::pushInstruction(Opcode opcode, std::optional<QVariant> immediate)
         if (constants.size() > std::numeric_limits<uint16_t>::max()) {
             return false;
         }
-        while (instructions.size() % 4 > 1) {
+
+        // TODO: does this alignment actually make any sense...
+        while ((instructions.size() + 1) % 2 > 1) {
             instructions.push_back(Opcode::Nop);
         }
 
@@ -54,15 +71,39 @@ bool Bytecode::pushInstruction(Opcode opcode, std::optional<QVariant> immediate)
     }
 }
 
+bool Bytecode::forwardInstruction(Opcode opcode, std::optional<QVariant> immediate) {
+    switch (opcode) {
+        case LoadI16:
+        case LoadU16:
+        case LoadI32:
+        case LoadU32:
+        case LoadI64:
+        case LoadU64: opcode = MetaLoadInt; break;
+        case AddI16:
+        case AddI32:
+        case AddI64: opcode = MetaAddInt; break;
+        case MulI16:
+        case MulI32:
+        case MulI64: opcode = MetaMulInt; break;
+        case OffsetI16:
+        case OffsetI32:
+        case OffsetI64: opcode = MetaOffsetInt; break;
+        default: break;
+    }
+    return pushInstruction(opcode, immediate);
+}
+
 QString Bytecode::disassemble(bool integerInHex) {
     auto metaEnum = QMetaEnum::fromType<Opcode>();
     QString ret;
     uint16_t immIdx;
     // TODO: rewrite using Bytecode::execute
 
-    auto getImmIndex = [](decltype(instructions.cbegin()) &it) -> auto {
+    auto getImmIndex = [](decltype(instructions.cbegin()) &_it) -> auto {
+        auto it = reinterpret_cast<const uint8_t *>(_it); // QByteArray iterator is signed char??? had to cast to u8
         uint16_t ret = *it;
-        ++it;
+        ++it;  // Next byte
+        ++_it; // Next byte for the original iterator
         ret |= (uint16_t(*it) << 8);
         return ret;
     };
@@ -85,7 +126,8 @@ QString Bytecode::disassemble(bool integerInHex) {
         ret += opName;
         if (IntImmSet.contains(insn)) {
             // Do integer immediate specific processing
-            immIdx = getImmIndex(++it);
+            ++it;
+            immIdx = getImmIndex(it);
             if (integerInHex) {
                 ret += " 0x";
             } else {
@@ -125,9 +167,10 @@ Bytecode::ExecutionResult
     Bytecode::execute(ExecutionState &state,
                       std::function<Bytecode::ExecutionResult(ExecutionState &, Opcode, ImmType)> runner) {
     auto getImmIndex = [this](size_t &offset) -> auto {
-        uint16_t ret = instructions.at(offset);
+        auto dataPtr = reinterpret_cast<const uint8_t *>(instructions.constData());
+        uint16_t ret = dataPtr[offset];
         ++offset;
-        ret |= (instructions.at(offset) << 8);
+        ret |= (dataPtr[offset] << 8);
         return ret;
     };
 
@@ -157,7 +200,8 @@ Bytecode::ExecutionResult
         } SignExtender;
         if (IntImmSet.contains(insn)) {
             // Do integer immediate specific processing
-            immIdx = getImmIndex(++PC);
+            ++PC;
+            immIdx = getImmIndex(PC);
             if (U16ImmSet.contains(insn)) {
                 imm = immIdx;
             } else if (U32ImmSet.contains(insn)) {
@@ -299,6 +343,9 @@ bool Bytecode::checkIfRequiredImmediateValid(Opcode opcode, const std::optional<
         case MetaAddInt:
         case MetaMulInt:
         case MetaOffsetInt:
+        case LogicalShiftRight:
+        case MaskBitsSignExtend:
+        case MaskBitsZeroExtend:
             if (immediate.has_value() && immediate->type() != QVariant::String &&
                 (immediate->canConvert(QMetaType::ULongLong) || immediate->canConvert(QMetaType::LongLong))) {
                 return true;
@@ -325,6 +372,9 @@ uint16_t Bytecode::handleIntegerImmediates(Opcode opcode, const QVariant immedia
         case MetaAddInt:
         case MetaMulInt:
         case MetaOffsetInt: return handleIntegerImmediatesWithoutUnsignedRange(opcode, immediate);
+        case LogicalShiftRight:
+        case MaskBitsZeroExtend:
+        case MaskBitsSignExtend: return handleBitfieldOperationImmediates(opcode, immediate);
         default: Q_UNREACHABLE();
     }
 }
@@ -430,6 +480,11 @@ uint16_t Bytecode::handleIntegerImmediatesWithoutUnsignedRange(Opcode opcode, co
     return ret;
 }
 
+uint16_t Bytecode::handleBitfieldOperationImmediates(Opcode opcode, const QVariant &immediate) {
+    // Since a bitfield can never be larger than 32767 bits, we simply encode the bit shift in the immediate index
+    return immediate.toULongLong();
+}
+
 std::variant<uint64_t, int64_t> Bytecode::getIntegerImmediateFromQVariant(const QVariant &immediate) {
     switch (static_cast<QMetaType::Type>(immediate.type())) {
         case QMetaType::UChar:
@@ -445,4 +500,5 @@ std::variant<uint64_t, int64_t> Bytecode::getIntegerImmediateFromQVariant(const 
         default: Q_UNREACHABLE();
     }
 }
+
 } // namespace ExpressionEvaluator

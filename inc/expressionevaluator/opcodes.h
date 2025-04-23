@@ -48,10 +48,11 @@ enum Opcode {
                 // BaseMember access got a bitfield type, BaseEval is automatically performed in static optimization.
 
     TypeResetScope = 0x20, // IMM: NONE. Reset TypeScope to the root level scope.
-    TypeLoadScope, // IMM: STR $a. Find a scope named $a in current TypeScope and replace TypeScope with this scope.
-    TypeLoadType,  // IMM: STR $a. Find a type named $a in current TypeScope and replace Type with this type.
-    TypeModifyPtr, // IMM: NONE. Add a layer of Pointer Modifier to the current Type.
-    TypeModifyArr, // IMM: NONE. Add a layer of Array Modifier to the current Type.
+    TypeLoadScope,  // IMM: STR $a. Find a scope named $a in current TypeScope and replace TypeScope with this scope.
+    TypeLoadType,   // IMM: STR $a. Find a type named $a in current TypeScope and replace Type with this type.
+    TypeModifyPtr,  // IMM: NONE. Add a layer of Pointer Modifier to the current Type.
+    TypeModifyArr,  // IMM: NONE. Add a layer of Array Modifier to the current Type.
+    TypePushSizeof, // IMM: NONE. Take the size of current Type and push onto stack.
 
     TypeLoadU8 = 0x30, // IMM: NONE. Replace Type with internal integer type Uint8.
     TypeLoadU16,       // IMM: NONE. Replace Type with internal integer type Uint16.
@@ -64,19 +65,22 @@ enum Opcode {
     TypeLoadF32,       // IMM: NONE. Replace Type with internal integer type Float32.
     TypeLoadF64,       // IMM: NONE. Replace Type with internal integer type Float64.
 
-    AddI16 = 0x40, // IMM: INT $a. Pop one element and add with SignExtendTo64($a) encoded in instruction stream, and
-                   // push result onto the stack.
-    AddI32,        // IMM: INT $a. Pop one element and add with SignExtendTo64($a), and push result onto the stack.
-    AddI64,        // IMM: INT $a. Pop one element and add with $a, and push result onto the stack.
+    Add = 0x40, // IMM: NONE. let A = pop(); let B = pop(); push(B + A);
+    AddI16,     // IMM: INT $a. Pop one element and add with SignExtendTo64($a) encoded in instruction stream, and
+                // push result onto the stack.
+    AddI32,     // IMM: INT $a. Pop one element and add with SignExtendTo64($a), and push result onto the stack.
+    AddI64,     // IMM: INT $a. Pop one element and add with $a, and push result onto the stack.
+    Mul,        // IMM: NONE. let A = pop(); let B = pop(); push(B * A);
     MulI16, // IMM: INT $a. Pop one element and multiply with SignExtendTo64($a) encoded in instruction stream, and push
             // result onto the stack.
     MulI32, // IMM: INT $a. Pop one element and multiply with SignExtendTo64($a), and push result onto the stack.
     MulI64, // IMM: INT $a. Pop one element and multiply with $a, and push result onto the stack.
-    OffsetI16, // IMM: INT $a. Pop one element and encoded-in-instruction-stream offset $a * siezof(Deref(BaseType)),
+    Offset, // IMM: NONE. let A = pop(); let B = pop(); push(B + A * sizeof(Deref(BaseType)));
+    OffsetI16, // IMM: INT $a. Pop one element and encoded-in-instruction-stream offset $a * sizeof(Deref(BaseType)),
                // and push result onto the stack. If BaseType is not pointer or array type, an error is raised.
-    OffsetI32, // IMM: INT $a. Pop one element and offset $a * siezof(Deref(BaseType)), and push result onto the stack.
+    OffsetI32, // IMM: INT $a. Pop one element and offset $a * sizeof(Deref(BaseType)), and push result onto the stack.
                // If BaseType is not pointer or array type, an error is raised.
-    OffsetI64, // IMM: INT $a. Pop one element and offset $a * siezof(Deref(BaseType)), and push result onto the stack.
+    OffsetI64, // IMM: INT $a. Pop one element and offset $a * sizeof(Deref(BaseType)), and push result onto the stack.
                // If BaseType is not pointer or array type, an error is raised.
 
     Deref8 = 0x80, // IMM: NONE. Pop one element as address, read 1 byte of device memory there and push it onto stack.
@@ -98,11 +102,12 @@ enum Opcode {
 
     SingleEvalBegin = 0xE0, // IMM: NONE. Marks the beginning of Single Evaluation Block.
     SingleEvalEnd,          // IMM: NONE. Marks the ending of Single Evaluation Block.
-    LogicalShiftRight,      // IMM: INT $a. Pop one element, logical shift right $a bits, and push back onto stack.
-    MaskBitsZeroExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits and push back onto
-                        // stack.
-    MaskBitsSignExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits and sign extend to
-                        // 64-bit, and push back onto stack.
+    LogicalShiftRight,      // IMM: INT $a. Pop one element, logical shift right $a bits ($a is encoded in instruction
+                            // stream), and push back onto stack.
+    MaskBitsZeroExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits ($a is encoded in
+                        // instruction stream)and push back onto stack.
+    MaskBitsSignExtend, // IMM: INT $a. Pop one element, mask out all bits other than lowest $a bits ($a is encoded in
+                        // instruction stream)and sign extend to 64-bit, and push back onto stack.
 
     MaxOpcodes = 0x100, // No opcodes can be allocated beyond 0xFF
     MetaLoadInt,        // IMM: INT $a. Meta-opcode used when calling Bytecode::pushInstruction.

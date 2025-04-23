@@ -29,6 +29,7 @@ struct Bytecode {
     enum ExecutionResult { Completed, Continue, MemAccess, BeginErrors, ErrorBreak, InvalidPC };
 
     bool pushInstruction(Opcode opcode, std::optional<QVariant> immediate);
+    bool forwardInstruction(Opcode opcode, std::optional<QVariant> immediate);
     QString disassemble(bool integerInHex = true);
     ExecutionResult execute(ExecutionState &state,
                             std::function<ExecutionResult(ExecutionState &, Opcode, ImmType)> runner);
@@ -40,6 +41,7 @@ private:
     uint16_t handleIntegerImmediates(Opcode opcode, const QVariant immediate);
     uint16_t handleIntegerImmediatesWithUnsignedRange(Opcode opcode, const QVariant &immediate);
     uint16_t handleIntegerImmediatesWithoutUnsignedRange(Opcode opcode, const QVariant &immediate);
+    uint16_t handleBitfieldOperationImmediates(Opcode, const QVariant &immediate);
 
     std::variant<uint64_t, int64_t> getIntegerImmediateFromQVariant(const QVariant &immediate);
 };

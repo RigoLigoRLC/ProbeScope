@@ -308,7 +308,13 @@ public:
     virtual QString displayName() override { return m_typeName; }
     virtual bool expandable() override { return !m_children.isEmpty(); }
     virtual Result<QVector<TypeChildInfo>, std::nullptr_t> getChildren() override { return Ok(m_children); }
-    virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override { return Err(nullptr); };
+    virtual Result<TypeChildInfo, std::nullptr_t> getChild(QString childName) override {
+        if (auto it = m_childrenMap.find(childName); it == m_childrenMap.end()) {
+            return Err(nullptr);
+        } else {
+            return Ok(m_children[it.value()]);
+        }
+    };
     virtual Result<IType::p, std::nullptr_t> getOperated(Operation op) override { return Err(nullptr); };
     virtual size_t getSizeof() override { return m_byteSize; }
     virtual TypeFlags flags() override {
@@ -340,7 +346,10 @@ private:
     bool m_hasVirtualInheritance = false;
     bool m_namedByTypedef = false;
 
-    void addMember(TypeChildInfo &child) { m_children.append(child); }
+    void addMember(TypeChildInfo &child) {
+        m_children.append(child);
+        m_childrenMap.insert(child.name, m_children.size() - 1);
+    }
 };
 
 class TypeModified : public TypeBase {

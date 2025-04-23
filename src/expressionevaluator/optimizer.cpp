@@ -3,12 +3,82 @@
 
 namespace ExpressionEvaluator {
 
+Result<Bytecode, QString> ConstantFolding(Bytecode &bytecode) {
+    Bytecode ret;
+    ExecutionState es;
+
+    union {
+        uint64_t u;
+        int64_t i;
+    } tmp1, tmp2;
+    bytecode.execute(es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
+        switch (op) {
+            case Nop: return Bytecode::Continue;
+            case LoadI16:
+            case LoadU16:
+            case LoadI32:
+            case LoadU32:
+            case LoadI64:
+            case LoadU64: es.stack.push_back(std::get<uint64_t>(imm)); return Bytecode::Continue;
+            case Add: {
+                uint64_t a = es.stack.takeLast(), b = es.stack.takeLast();
+                es.stack.push_back(b + a);
+                return Bytecode::Continue;
+            }
+            case AddI16:
+            case AddI32:
+            case AddI64: es.stack.back() += std::get<uint64_t>(imm); return Bytecode::Continue;
+            case Mul: {
+                tmp1.u = es.stack.takeLast();
+                tmp2.u = es.stack.takeLast();
+                es.stack.push_back(tmp1.i * tmp2.i);
+                return Bytecode::Continue;
+            }
+            case MulI16:
+            case MulI32:
+            case MulI64: {
+                tmp1.u = es.stack.back();
+                tmp2.u = std::get<uint64_t>(imm);
+                es.stack.back() = tmp1.i * tmp2.i;
+                return Bytecode::Continue;
+            }
+            default: {
+                // When we've met a non-constant-manipulator instruction we should have at most one entry on the stack.
+                Q_ASSERT(es.stack.size() <= 1);
+                if (es.stack.size()) {
+                    ret.pushInstruction(MetaLoadInt, es.stack.takeLast());
+                }
+                // TODO: this instruction forward code is stupid, refactor it as something simpler
+                if (std::holds_alternative<QString>(imm)) {
+                    ret.forwardInstruction(op, std::get<QString>(imm));
+                } else if (std::holds_alternative<uint64_t>(imm)) {
+                    ret.forwardInstruction(op, std::get<uint64_t>(imm));
+                } else {
+                    ret.forwardInstruction(op, {});
+                }
+                return Bytecode::Continue;
+            }
+        }
+    });
+
+    return Ok(ret);
+}
+
 Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symbolBackend) {
     QString err;
     Bytecode ret;
     ExecutionState es;
 
     bool definingBase = false, definingType = false;
+
+    // This "awaitingImm" is used, because in this static optimization pass, Add/Mul/Offset insns that pops two values
+    // off the stack and does some operation, should be converted into the Add16/Add32/Add64/etc variants that only
+    // modifies the address on the top of the stack, the other operand is in the immediate of such insn. But because we
+    // process the instruction flow linearly, meaning we can't look back at "what the last few instructions have done"
+    // and our bytecode container doesn't support popping insn either, meaning we must somehow save the second operand
+    // and wait until the Add/Mul/Offset insn comes. So we came up with this variable that does exactly this.
+    Option<uint64_t> awaitingImm;
+
     bytecode.execute(es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
         switch (op) {
             // Base defining
@@ -20,6 +90,16 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                 es.regBaseType = base->type;
                 address = base->offset;
                 ret.pushInstruction(MetaLoadInt, address);
+                break;
+            }
+            case BaseDeref: {
+                // We attempt to acquire a Modification type (array or pointer). Failing is fatal in this case.
+                auto modifiedType = std::dynamic_pointer_cast<TypeModified>(es.regBaseType);
+                if (!modifiedType) {
+                    err = QObject::tr("The type being dereferenced is not pointer or array type");
+                    return Bytecode::ErrorBreak;
+                }
+                es.regBaseType = modifiedType->getOperated(IType::Operation::Deref).unwrap();
                 break;
             }
             // Type defining
@@ -57,6 +137,26 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                     ret.pushInstruction(MetaAddInt, childInfo.byteOffset);
                     es.regBaseType = childInfo.type;
                 }
+                break;
+            }
+            // Offsetting. This is used on arrays and pointers, and is syntactically equivalent to adding integers onto
+            // a pointer (offsets the address pointed to by N times the element size)
+            case Offset: {
+                // We attempt to acquire a Modification type (array or pointer). Failing is fatal in this case.
+                auto modifiedType = std::dynamic_pointer_cast<TypeModified>(es.regBaseType);
+                if (!modifiedType) {
+                    err = QObject::tr("You may only add offset a pointer or an array");
+                    return Bytecode::ErrorBreak;
+                }
+
+                // This getOperated operation doesn't seem to care the actual argument... should this get a FIXME?
+                auto baseType = modifiedType->getOperated(IType::Operation::Deref).unwrap();
+
+                // Multiply with the value already on the top of stack
+                ret.pushInstruction(MetaMulInt, {baseType->getSizeof()});
+
+                // Do the offset, let the constant folding part clean it up
+                ret.pushInstruction(Add, {});
                 break;
             }
             case BaseEval: {
@@ -111,11 +211,11 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
             }
             default: {
                 if (std::holds_alternative<QString>(imm)) {
-                    ret.pushInstruction(op, std::get<QString>(imm));
+                    ret.forwardInstruction(op, std::get<QString>(imm));
                 } else if (std::holds_alternative<uint64_t>(imm)) {
-                    ret.pushInstruction(op, std::get<uint64_t>(imm));
+                    ret.forwardInstruction(op, std::get<uint64_t>(imm));
                 } else {
-                    ret.pushInstruction(op, {});
+                    ret.forwardInstruction(op, {});
                 }
             }
         }
@@ -126,7 +226,12 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
         return Err(err);
     }
 
-    return Ok(ret);
+    qDebug() << "Static evaluation pass";
+    qDebug().noquote() << ret.disassemble();
+
+    auto constantFolded = ConstantFolding(ret);
+
+    return Ok(constantFolded.unwrap());
 }
 
 } // namespace ExpressionEvaluator
