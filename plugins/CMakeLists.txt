@@ -21,6 +21,8 @@ foreach(plugin ${BUILT_PLUGINS})
                 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/probelibs"
                 ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/probelibs"
             )
+            # TODO: This may need a change on macOS and Linux targets
+            install(TARGETS ${plugin} DESTINATION ${CMAKE_INSTALL_PREFIX}/probelibs/)
             message(STATUS "Plugin ${plugin} has been configured as a probelib.")
         endif()
     endif()

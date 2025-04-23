@@ -77,7 +77,7 @@ file(GLOB_RECURSE SOURCES
     lang/*.qrc
 )
 
-add_executable(probescope)
+add_executable(probescope WIN32)
 
 file(GLOB_RECURSE QAS_HEADERS
     inc/serialization/*.h
@@ -107,6 +107,8 @@ qm_configure_target(probescope
 
     QT_LINKS Core Widgets Svg
 )
+
+install(TARGETS probescope)
 
 # Deal with translations
 qm_import(Translate)
