@@ -11,7 +11,36 @@
     <message>
         <location filename="../src/expressionevaluator/parser.cpp" line="109"/>
         <source>Parser internal failure: &quot;expr&quot; node not found.</source>
-        <translation>解析器内部错误：找不到“expr”节点</translation>
+        <translation>解析器内部错误：找不到“expr”节点。</translation>
+    </message>
+    <message>
+        <location filename="../src/expressionevaluator/parser.cpp" line="215"/>
+        <source>Det expr unimplemented</source>
+        <translation>遇到了未实现的det expr</translation>
+    </message>
+    <message>
+        <location filename="../src/expressionevaluator/parser.cpp" line="255"/>
+        <source>Parser internal failure: Invalid postfix expr (%1)</source>
+        <translation>解析器内部错误：非法的后缀表达式（%1）</translation>
+    </message>
+</context>
+<context>
+    <name>PlotAreaColumnDelegate</name>
+    <message>
+        <location filename="../ui/delegate/plotareacolumndelegate.cpp" line="125"/>
+        <source>(Unassigned)</source>
+        <translation>（未分配）</translation>
+    </message>
+    <message>
+        <location filename="../ui/delegate/plotareacolumndelegate.cpp" line="132"/>
+        <source>(%1 areas)</source>
+        <comment>%1 is the count of areas that a plot is assigned to</comment>
+        <translation>（%1个绘图区）</translation>
+    </message>
+    <message>
+        <location filename="../ui/delegate/plotareacolumndelegate.cpp" line="157"/>
+        <source>Select Plotting Areas...</source>
+        <translation>选择绘图区…</translation>
     </message>
 </context>
 <context>
@@ -90,104 +119,114 @@
         <translation>工具栏</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.ui" line="61"/>
+        <location filename="../ui/probescopewindow.ui" line="62"/>
         <source>Probe Benchmark</source>
         <translation>探头基准测试</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.ui" line="66"/>
+        <location filename="../ui/probescopewindow.ui" line="67"/>
         <source>Start Acquisition</source>
         <translation>开始采集</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.ui" line="69"/>
+        <location filename="../ui/probescopewindow.ui" line="70"/>
         <source>Start data acquisition and plotting.</source>
         <translation>开始数据采集并启动绘图。</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.ui" line="74"/>
+        <location filename="../ui/probescopewindow.ui" line="75"/>
         <source>Stop Acquisition</source>
         <translation>停止采集</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.ui" line="77"/>
+        <location filename="../ui/probescopewindow.ui" line="78"/>
         <source>Stop data acquisition and plotting.</source>
         <translation>停止数据采集并停止绘图。</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="25"/>
+        <location filename="../ui/probescopewindow.ui" line="83"/>
+        <source>New Plot Area</source>
+        <translation>新建绘图区</translation>
+    </message>
+    <message>
+        <location filename="../ui/probescopewindow.ui" line="86"/>
+        <source>Create a new plot area.</source>
+        <translation>创建一个新的绘图区。</translation>
+    </message>
+    <message>
+        <location filename="../ui/probescopewindow.cpp" line="28"/>
         <source>Welcome</source>
         <translation>欢迎</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="26"/>
+        <location filename="../ui/probescopewindow.cpp" line="29"/>
         <source>Symbols</source>
         <translation>符号树</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="27"/>
+        <location filename="../ui/probescopewindow.cpp" line="30"/>
         <source>Watch Entries</source>
         <translation>监视条目</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="47"/>
-        <location filename="../ui/probescopewindow.cpp" line="230"/>
+        <location filename="../ui/probescopewindow.cpp" line="53"/>
+        <location filename="../ui/probescopewindow.cpp" line="271"/>
         <source>(No Probe Selected)</source>
         <translation>（未选择探头）</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="49"/>
-        <location filename="../ui/probescopewindow.cpp" line="63"/>
+        <location filename="../ui/probescopewindow.cpp" line="55"/>
+        <location filename="../ui/probescopewindow.cpp" line="69"/>
         <source>...</source>
         <translation>…</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="61"/>
+        <location filename="../ui/probescopewindow.cpp" line="67"/>
         <source>(No Device Selected)</source>
         <translation>（未选择设备）</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="75"/>
+        <location filename="../ui/probescopewindow.cpp" line="81"/>
         <source>Disconnected</source>
         <translation>已断开连接</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="148"/>
+        <location filename="../ui/probescopewindow.cpp" line="185"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="148"/>
+        <location filename="../ui/probescopewindow.cpp" line="185"/>
         <source>Unconnected</source>
         <translation>已断开连接</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="160"/>
+        <location filename="../ui/probescopewindow.cpp" line="197"/>
         <source>Symbol file failed to load</source>
         <translation>加载符号文件失败</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="161"/>
+        <location filename="../ui/probescopewindow.cpp" line="198"/>
         <source>Error message: %1.</source>
         <translation>错误信息：%1。</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="181"/>
+        <location filename="../ui/probescopewindow.cpp" line="218"/>
         <source>Open symbol file...</source>
         <translation>打开符号文件…</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="183"/>
+        <location filename="../ui/probescopewindow.cpp" line="220"/>
         <source>ELF archives (*.axf *.elf)</source>
         <translation>ELF 文件 (*.axf *.elf)</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="215"/>
+        <location filename="../ui/probescopewindow.cpp" line="256"/>
         <source>No probe libraries found</source>
         <translation>未找到调试探头库</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="216"/>
+        <location filename="../ui/probescopewindow.cpp" line="257"/>
         <source>No probe libraries found.
 ProbeScope is supposed to ship with a default probe library.
 Reinstalling ProbeScope may solve this issue.</source>
@@ -196,37 +235,37 @@ ProbeScope 发行时默认包含了一个探头库。
 重新安装 ProbeScope 可能会解决此问题。</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="229"/>
+        <location filename="../ui/probescopewindow.cpp" line="270"/>
         <source>Failed to connect to probe</source>
         <translation>无法连接探头</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="232"/>
+        <location filename="../ui/probescopewindow.cpp" line="273"/>
         <source>Probe: %1</source>
         <translation>探头：%1</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="248"/>
+        <location filename="../ui/probescopewindow.cpp" line="289"/>
         <source>Failed to select device</source>
         <translation>无法选择此设备</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="249"/>
+        <location filename="../ui/probescopewindow.cpp" line="290"/>
         <source>No Device Selected</source>
         <translation>（未选择设备）</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="251"/>
+        <location filename="../ui/probescopewindow.cpp" line="292"/>
         <source>Device: %1</source>
         <translation>设备：%1</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="265"/>
+        <location filename="../ui/probescopewindow.cpp" line="306"/>
         <source>Connect fail</source>
         <translation>连接失败</translation>
     </message>
     <message>
-        <location filename="../ui/probescopewindow.cpp" line="278"/>
+        <location filename="../ui/probescopewindow.cpp" line="319"/>
         <source>Plot area %1</source>
         <translation>绘图区 %1</translation>
     </message>
@@ -234,17 +273,27 @@ ProbeScope 发行时默认包含了一个探头库。
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="35"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="99"/>
+        <source>The type being dereferenced is not pointer or array type</source>
+        <translation>解引用的不是指针或者数组类型</translation>
+    </message>
+    <message>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="115"/>
         <source>%1 does not have a child named %2</source>
         <translation>类型 %1 没有叫做 %2 的成员</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="81"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="148"/>
+        <source>You may only add offset a pointer or an array</source>
+        <translation>只能对指针或者数组应用偏移量</translation>
+    </message>
+    <message>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="181"/>
         <source>Got a non-numeric type on evaluation</source>
         <translation>求值时得到了非数值类型的数据</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="107"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="207"/>
         <source>Got a non-numeric type on return</source>
         <translation>返回结果时得到了非数值类型的数据</translation>
     </message>
@@ -458,12 +507,12 @@ Failed GDB executable path: %1
         <translation>&lt;错误类型&gt;</translation>
     </message>
     <message>
-        <location filename="../src/symbolbackend.cpp" line="1710"/>
+        <location filename="../src/symbolbackend.cpp" line="1711"/>
         <source>Function pointer</source>
         <translation>函数指针</translation>
     </message>
     <message>
-        <location filename="../src/symbolbackend.cpp" line="2079"/>
+        <location filename="../src/symbolbackend.cpp" line="2080"/>
         <source>&lt;Anonymous&gt;</source>
         <translation>&lt;匿名&gt;</translation>
     </message>
@@ -595,37 +644,37 @@ Command: %2</source>
 <context>
     <name>WatchEntryModel</name>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="30"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="34"/>
         <source>Double click to add watch entry</source>
         <translation>双击添加监视条目……</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="111"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="175"/>
         <source>Display name</source>
         <translation>显示名称</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="116"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="180"/>
         <source>Expression</source>
         <translation>表达式</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="121"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="185"/>
         <source>Plot areas</source>
         <translation>绘图区</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="126"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="190"/>
         <source>Thickness</source>
         <translation>线宽</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="131"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="195"/>
         <source>Style</source>
         <translation>线型</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="136"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="200"/>
         <source>Frequency</source>
         <translation>频率</translation>
     </message>
@@ -641,19 +690,19 @@ Command: %2</source>
 <context>
     <name>WelcomeBackground</name>
     <message>
-        <location filename="../ui/welcomebackground.h" line="25"/>
+        <location filename="../ui/welcomebackground.cpp" line="14"/>
         <source>Select your debug probe, target device on the status bar.
 Press the button with a green indicator to connect.</source>
         <translation>请在状态栏选择您的调试探头与目标设备。
 然后，点击绿色的指示灯按钮以启动连接。</translation>
     </message>
     <message>
-        <location filename="../ui/welcomebackground.h" line="32"/>
+        <location filename="../ui/welcomebackground.cpp" line="20"/>
         <source>Drag and drop a symbol file here to start.</source>
         <translation>向窗口拖拽符号文件以开始。</translation>
     </message>
     <message>
-        <location filename="../ui/welcomebackground.h" line="40"/>
+        <location filename="../ui/welcomebackground.cpp" line="28"/>
         <source>Welcome to ProbeScope</source>
         <translation>欢迎使用 ProbeScope</translation>
     </message>
@@ -661,29 +710,29 @@ Press the button with a green indicator to connect.</source>
 <context>
     <name>WorkspaceModel</name>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="39"/>
+        <location filename="../src/workspacemodel.cpp" line="38"/>
         <source>Cannot open cache file</source>
         <translation>无法打开缓冲文件</translation>
     </message>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="40"/>
+        <location filename="../src/workspacemodel.cpp" line="39"/>
         <source>Cache file %1 cannot be opened with read/write access.
 Do you wish to choose another place for cache file?</source>
         <translation>无法以读写权限打开缓冲文件“%1”。
 你想要手动为缓冲文件指定一个位置吗？</translation>
     </message>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="51"/>
+        <location filename="../src/workspacemodel.cpp" line="50"/>
         <source>Select where to save cache file...</source>
         <translation>选择保存缓冲文件的位置…</translation>
     </message>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="75"/>
+        <location filename="../src/workspacemodel.cpp" line="74"/>
         <source>Cannot map cache file</source>
         <translation>无法映射缓冲文件</translation>
     </message>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="76"/>
+        <location filename="../src/workspacemodel.cpp" line="75"/>
         <source>Cache file cannot be mapped to system memory. ProbeScope will now quit.</source>
         <translation>无法将缓冲文件映射至系统内存。ProbeScope 即将退出。</translation>
     </message>
