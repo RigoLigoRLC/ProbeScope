@@ -38,9 +38,11 @@ public:
         WatchExpressionParseFailed,
         InvalidWatchEntryIndex,
         InvalidPlotAreaId,
+        InvalidWatchEntryProperty,
     };
     Q_ENUM(Error);
 
+    using PlotAreas = QSet<size_t>;
     struct WatchEntry {
         // Acquisition properties
         QString expression;
@@ -51,7 +53,7 @@ public:
         double coefficient;
 
         // Plot painting properties
-        QSet<int> associatedPlotAreas;
+        PlotAreas associatedPlotAreas;
         QColor plotColor;
         int plotThickness;
         Qt::PenStyle plotStyle;
@@ -74,6 +76,11 @@ public:
      * @return On success: nothing. On fail: error code of SymbolBackend.
      */
     Result<void, SymbolBackend::Error> loadSymbolFile(QString path);
+
+    /**
+     * @brief Returns if there's a symbol file currently loaded. May be used to determine UI state.
+     */
+    bool isSymbolFileLoaded() { return m_symbolBackend->isSymbolFileLoaded(); }
 
     /**
      * @brief Returns path of symbol file. Returns empty string when no file was loaded or last symbol file load failed.
@@ -143,9 +150,11 @@ public:
      * area. This would also remove all the data already recorded for this watch entry, and free all its occupying
      * blocks.
      * @param entryId unique ID of watch entry
+     * @param fromUi If this removal request comes from Watch Entry Panel, set this to true. This prevents the workspace
+     * model from doing an extraneous row removal needed to perform when the removal request was internal to workspace.
      * @return On success: nothing. On fail: error code.
      */
-    Result<void, Error> removeWatchEntry(uint64_t entryId);
+    Result<void, Error> removeWatchEntry(uint64_t entryId, bool fromUi = false);
 
     /**
      * @brief Get the graph data container associated with a watch entry. This is used by UI when it's requested to add
@@ -231,7 +240,10 @@ signals:
     void requestAssignGraphOnPlotArea(size_t entryId, size_t areaId);
     void requestUnassignGraphOnPlotArea(size_t entryId, size_t areaId);
 
+    ///@brief This signal is emitted when plotting related properties are changed so that UI can update the plot.
+    void plotPropertyChanged(size_t entryId, WatchEntryModel::Columns prop, QVariant data);
+
     void feedbackAcquisitionStopped();
 };
 
-Q_DECLARE_METATYPE(QSet<size_t>);
+Q_DECLARE_METATYPE(WorkspaceModel::PlotAreas);

@@ -12,7 +12,6 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <cstdint>
-#include <limits>
 
 // #define BLOCK_ALLOC_DEBUG_MSG
 
@@ -163,6 +162,7 @@ Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expr
     auto parseResult = ExpressionEvaluator::Parser::parseToBytecode(expression);
     if (parseResult.isErr()) {
         (qWarning() << "Parse of expression" << expression << "failed:").noquote() << parseResult.unwrapErr();
+        // FIXME: Parse failure should preserve the entry
         return Err(Error::WatchExpressionParseFailed);
     }
 
@@ -209,7 +209,7 @@ Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expr
     return Err(Error::NoError);
 }
 
-Result<void, WorkspaceModel::Error> WorkspaceModel::removeWatchEntry(uint64_t entryId) {
+Result<void, WorkspaceModel::Error> WorkspaceModel::removeWatchEntry(uint64_t entryId, bool fromUi) {
     if (!m_watchEntries.contains(entryId)) {
         qCritical() << "Watch Entry ID" << entryId << "does not exists and cannot remove it";
         return Err(Error::InvalidWatchEntryIndex);
@@ -222,7 +222,10 @@ Result<void, WorkspaceModel::Error> WorkspaceModel::removeWatchEntry(uint64_t en
         emit requestUnassignGraphOnPlotArea(entryId, i);
     }
 
-    // TODO: Remove from watch entry model
+    // Remove from watch entry model
+    if (!fromUi) {
+        m_watchEntryModel->removeEntry(entryId);
+    }
 
     // Remove from acquisition hub
     m_acquisitionHub->removeWatchEntry(entryId);
@@ -269,7 +272,42 @@ Result<void, WorkspaceModel::Error>
         return Err(Error::InvalidWatchEntryIndex);
     }
 
-    // FIXME: fill in function!!!
+    auto needsEmitPropChangedSignal = [&]() -> Result<bool, Error> {
+        auto &entry = m_watchEntries[entryId];
+        switch (prop) {
+            case WatchEntryModel::Color: entry.plotColor = data.value<QColor>(); return Ok(true);
+            case WatchEntryModel::DisplayName: entry.displayName = data.toString(); return Ok(true);
+            case WatchEntryModel::Expression: {
+                return Ok(false);
+            }
+            case WatchEntryModel::PlotAreas: {
+                auto &&newSet = data.value<PlotAreas>();
+                auto &oldSet = entry.associatedPlotAreas;
+                auto additions = newSet - oldSet;
+                auto removals = oldSet - newSet;
+                for (auto i : additions) {
+                    emit requestAssignGraphOnPlotArea(entryId, i);
+                }
+                for (auto i : removals) {
+                    emit requestUnassignGraphOnPlotArea(entryId, i);
+                }
+                entry.associatedPlotAreas = newSet;
+                return Ok(false);
+            }
+            case WatchEntryModel::Thickness: entry.plotThickness = data.toInt(); return Ok(true);
+            case WatchEntryModel::LineStyle: entry.plotStyle = data.value<Qt::PenStyle>(); return Ok(true);
+            case WatchEntryModel::FrequencyLimit: entry.acquisitionFrequencyLimit = data.toInt(); return Ok(true);
+            case WatchEntryModel::MaxColumns:
+            case WatchEntryModel::FrequencyFeedback: return Err(Error::InvalidWatchEntryProperty);
+        }
+        return Err(Error::InvalidWatchEntryProperty);
+    }();
+
+    if (needsEmitPropChangedSignal.isErr()) {
+        return Err(needsEmitPropChangedSignal.unwrapErr());
+    } else if (needsEmitPropChangedSignal.unwrap()) {
+        emit plotPropertyChanged(entryId, prop, data);
+    }
 
     return Ok();
 }

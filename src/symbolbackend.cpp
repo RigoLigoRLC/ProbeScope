@@ -1358,6 +1358,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                     propagateOffset(childInfo.byteOffset, bitOffset / 8);
                     childInfo.bitOffset = static_cast<uint8_t>(bitOffset % 8);
                     childInfo.bitWidth = static_cast<uint8_t>(bitSizeResult.unwrap().u);
+                    childInfo.flags |= TypeChildInfo::Bitfield;
                 }
                 // Add to members
                 type->addMember(childInfo);

@@ -10,9 +10,21 @@ class WorkspaceModel;
 class WatchEntryModel : public QAbstractTableModel {
     Q_OBJECT
 public:
-    WatchEntryModel(WorkspaceModel *workspaceModel, QObject *parent)
-        : QAbstractTableModel(parent), m_workspace(workspaceModel) {}
+    WatchEntryModel(WorkspaceModel *workspaceModel, QObject *parent);
     virtual ~WatchEntryModel() {}
+
+    enum Columns {
+        Color,
+        DisplayName,
+        Expression,
+        PlotAreas,
+        Thickness,
+        LineStyle,
+        FrequencyLimit,
+
+        MaxColumns,
+        FrequencyFeedback,
+    };
 
     //
     // Reimplemented functions
@@ -20,6 +32,8 @@ public:
     virtual int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     virtual int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
+    virtual Qt::ItemFlags flags(const QModelIndex &index) const override;
+    virtual bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
 
     virtual QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
@@ -31,6 +45,14 @@ public:
     //
     // Interface functions
     //
+
+    /**
+     * @brief Call this function when the UI display for an entry has to be invalidated but the data change was not made
+     * from the setData function.
+     * @param entryId Watch entry ID
+     * @param prop Which property of the entry has changed
+     */
+    void invalidateEntryDataDisplay(size_t entryId, Columns prop);
 
     /**
      * @brief When workspace receives a frequency feedback, this function is called to notify the UI to refresh
@@ -45,19 +67,11 @@ public:
      */
     void notifyFrequencyFeedbackChanged();
 
-
-    enum Columns {
-        Color,
-        DisplayName,
-        Expression,
-        PlotAreas,
-        Thickness,
-        LineStyle,
-        FrequencyLimit,
-
-        MaxColumns,
-        FrequencyFeedback,
-    };
+    /**
+     * @brief Called internally by WorkspaceModel to remove an entry from inside of the model
+     * @param entryId Watch entry ID.
+     */
+    void removeEntry(size_t entryId);
 
 private:
     /**

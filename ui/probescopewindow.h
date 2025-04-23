@@ -7,6 +7,7 @@
 #include "selectprobedialog.h"
 #include "symbolpanel.h"
 #include "ui_probescopewindow.h"
+#include "uistatebridge.h"
 #include "watchentrypanel.h"
 #include "welcomebackground.h"
 #include "workspacemodel.h"
@@ -14,16 +15,33 @@
 #include <DockWidget.h>
 #include <QTimer>
 
-class ProbeScopeWindow : public QMainWindow {
+using namespace Qt::StringLiterals;
+
+class ProbeScopeWindow : public QMainWindow, public IUiStateBridge {
     Q_OBJECT
 public:
     ProbeScopeWindow(QWidget *parent = nullptr);
     ~ProbeScopeWindow();
 
+    // IUiStateBridge interfaces
+    virtual QMap<size_t, QString> collectPlotAreaNames() override;
+    virtual QString getPlotAreaName(size_t areaId) override;
+
+public:
+    enum DockWidgetType {
+        DWT_Welcome,
+        DWT_Symbols,
+        DWT_WatchEntries,
+        DWT_PlotArea,
+    };
+    Q_ENUM(DockWidgetType);
+
 private:
     void setConnectionSpeed(int khz); // Negative for unconnected
 
     // State management
+    void addDockWidget(ads::DockWidgetArea area, ads::CDockWidget *dWidget);
+    void addDockWidgetTab(ads::DockWidgetArea area, ads::CDockWidget *dWidget);
     void reevaluateConnectionRelatedWidgetEnableStates();
 
     // Inner utils
@@ -72,6 +90,7 @@ private slots:
     // Actions
     void sltStartAcquisition();
     void sltStopAcquisition();
+    void sltNewPlotArea();
 
     // Status bar
     void sltSelectProbe();
@@ -88,6 +107,8 @@ private slots:
 
     // UI Internal
     void sltRefreshTimerExpired();
+    void sltDockWidgetClosed();
+    void sltDockWidgetRemoved(ads::CDockWidget *dWidget);
 
 signals:
     void plotAreaClosed(size_t id);

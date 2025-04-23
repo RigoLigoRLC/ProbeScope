@@ -19,6 +19,8 @@ int main(int argc, char **argv) {
 
     QIcon::setThemeName("light"); // TODO: Make this configurable
 
+    // qApp->setStyle("windowsvista"); // Fuck QWindows11Style
+
 #ifdef Q_OS_WIN
     // Workaround for Qt5 font issue
     if (QLocale::system().language() == QLocale::Chinese) {

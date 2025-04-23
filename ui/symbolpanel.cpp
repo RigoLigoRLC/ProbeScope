@@ -23,8 +23,8 @@ SymbolPanel::SymbolPanel(QWidget *parent) : QWidget(parent) {
     // ui->treeSymbolTree->header()->installEventFilter(new FirstColumnFollowResizeFilter(this));
 
     // Initialize rich text item delegate
-    m_htmlDelegate = new SymbolNameDelegate(this);
-    ui->treeSymbolTree->setItemDelegateForColumn(GeneralCol, m_htmlDelegate);
+    m_symbolNameDelegate = new SymbolNameDelegate(this);
+    ui->treeSymbolTree->setItemDelegateForColumn(GeneralCol, m_symbolNameDelegate);
 
     connect(ui->treeSymbolTree, &QTreeWidget::itemExpanded, this, &SymbolPanel::sltItemExpanded);
     connect(ui->btnAddWatchEntry, &QPushButton::clicked, this, &SymbolPanel::sltAddWatchEntryClicked);

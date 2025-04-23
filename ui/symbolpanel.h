@@ -66,7 +66,7 @@ public:
 
 private:
     SymbolBackend *m_symbolBackend;
-    SymbolNameDelegate *m_htmlDelegate;
+    SymbolNameDelegate *m_symbolNameDelegate;
 
 public:
     struct VariableLocationDesc {

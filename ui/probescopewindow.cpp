@@ -11,6 +11,9 @@
 #include <QMessageBox>
 #include <QSettings>
 
+static constexpr auto DockWidgetTypeProperty = "DockWidgetType";
+static constexpr auto DockWidgetPlotAreaIdProperty = "DockWidgetPlotAreaId";
+
 ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_refreshTimerShouldStop(false) {
     ui = new Ui::ProbeScopeWindow;
     ui->setupUi(this);
@@ -29,10 +32,13 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
     // Initialize panels
     m_welcomeBackground = new WelcomeBackground(m_dockWelcomeBackground);
     m_dockWelcomeBackground->setWidget(m_welcomeBackground);
+    m_dockWelcomeBackground->setProperty(DockWidgetTypeProperty, DWT_Welcome);
     m_symbolPanel = new SymbolPanel(m_dockSymbolPanel);
     m_dockSymbolPanel->setWidget(m_symbolPanel, ads::CDockWidget::ForceNoScrollArea);
-    m_watchEntryPanel = new WatchEntryPanel(m_dockWatchEntryPanel);
+    m_dockSymbolPanel->setProperty(DockWidgetTypeProperty, DWT_Symbols);
+    m_watchEntryPanel = new WatchEntryPanel(this, m_dockWatchEntryPanel);
     m_dockWatchEntryPanel->setWidget(m_watchEntryPanel, ads::CDockWidget::ForceNoScrollArea);
+    m_dockWatchEntryPanel->setProperty(DockWidgetTypeProperty, DWT_WatchEntries);
 
     // Place dockable panels to dock manager
     m_dockMgr->setCentralWidget(m_dockWelcomeBackground);
@@ -117,9 +123,11 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
     // Actions
     connect(ui->actionStartAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStartAcquisition);
     connect(ui->actionStopAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStopAcquisition);
+    connect(ui->actionNewPlotArea, &QAction::triggered, this, &ProbeScopeWindow::sltNewPlotArea);
 
     // UI internal signals
     connect(&m_refreshTimer, &QTimer::timeout, this, &ProbeScopeWindow::sltRefreshTimerExpired);
+    connect(m_dockMgr, &ads::CDockManager::dockWidgetRemoved, this, &ProbeScopeWindow::sltDockWidgetRemoved);
 
     // Init long-living dialogs
     m_selectDeviceDialog = new SelectDeviceDialog(this);
@@ -131,6 +139,35 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
 
 ProbeScopeWindow::~ProbeScopeWindow() {
     delete ui;
+}
+
+QMap<size_t, QString> ProbeScopeWindow::collectPlotAreaNames() {
+    QMap<size_t, QString> ret;
+
+    for (auto it = m_dockPlotAreas.begin(); it != m_dockPlotAreas.end(); ++it) {
+        ret.insert(it.key(), it.value()->windowTitle());
+    }
+
+    return ret;
+}
+
+QString ProbeScopeWindow::getPlotAreaName(size_t areaId) {
+    if (auto it = m_dockPlotAreas.find(areaId); it != m_dockPlotAreas.end()) {
+        return it.value()->windowTitle();
+    }
+    return u"<Invalid AreaID=%1>"_s.arg(areaId);
+}
+
+void ProbeScopeWindow::addDockWidget(ads::DockWidgetArea area, ads::CDockWidget *dWidget) {
+    //
+    m_dockMgr->addDockWidget(area, dWidget);
+    connect(dWidget, &ads::CDockWidget::closed, this, &ProbeScopeWindow::sltDockWidgetClosed);
+}
+
+void ProbeScopeWindow::addDockWidgetTab(ads::DockWidgetArea area, ads::CDockWidget *dWidget) {
+    //
+    m_dockMgr->addDockWidgetTab(area, dWidget);
+    connect(dWidget, &ads::CDockWidget::closed, this, &ProbeScopeWindow::sltDockWidgetClosed);
 }
 
 void ProbeScopeWindow::reevaluateConnectionRelatedWidgetEnableStates() {
@@ -207,6 +244,10 @@ void ProbeScopeWindow::sltStopAcquisition() {
     m_workspace->notifyAcquisitionStopped();
 }
 
+void ProbeScopeWindow::sltNewPlotArea() {
+    m_workspace->addPlotArea();
+}
+
 void ProbeScopeWindow::sltSelectProbe() {
     // NOTE: MUST ensure that acquisition is not running
 
@@ -277,8 +318,10 @@ void ProbeScopeWindow::sltCreatePlotArea(size_t id) {
     auto area = new PlotAreaPanel(id, m_workspace);
     auto dock = new ads::CDockWidget(tr("Plot area %1").arg(id), this);
     dock->setWidget(area, ads::CDockWidget::ForceNoScrollArea);
+    dock->setProperty(DockWidgetTypeProperty, DWT_PlotArea);
+    dock->setProperty(DockWidgetPlotAreaIdProperty, id);
 
-    m_dockMgr->addDockWidgetTab(ads::CenterDockWidgetArea, dock);
+    addDockWidgetTab(ads::CenterDockWidgetArea, dock);
     m_dockPlotAreas[id] = dock;
     m_plotAreas[id] = area;
 }
@@ -286,8 +329,10 @@ void ProbeScopeWindow::sltCreatePlotArea(size_t id) {
 void ProbeScopeWindow::sltRemovePlotArea(size_t id) {
     Q_ASSERT(m_dockPlotAreas.contains(id) && m_plotAreas.contains(id));
 
-    auto area = m_plotAreas.take(id);
-    auto dock = m_dockPlotAreas.take(id);
+    // Don't use take here, because the model will try to unassign graphs, and that function will assert if the plot
+    // areas are removed here
+    auto area = m_plotAreas.value(id);
+    auto dock = m_dockPlotAreas.value(id);
 
     auto plots = area->assignedPlots();
     for (auto entryId : plots) {
@@ -296,7 +341,13 @@ void ProbeScopeWindow::sltRemovePlotArea(size_t id) {
         auto newAreas = areasResult.unwrap().value<QSet<size_t>>();
         newAreas.remove(id);
         m_workspace->setWatchEntryGraphProperty(entryId, WatchEntryModel::PlotAreas, QVariant::fromValue(newAreas));
+
+        // Should notify the UI
+        m_workspace->getWatchEntryModel()->invalidateEntryDataDisplay(entryId, WatchEntryModel::PlotAreas);
     }
+
+    m_plotAreas.remove(id);
+    m_dockPlotAreas.remove(id);
 }
 
 void ProbeScopeWindow::sltAssignGraphOnPlotArea(size_t entryId, size_t areaId) {
@@ -329,4 +380,21 @@ void ProbeScopeWindow::sltRefreshTimerExpired() {
         m_refreshTimer.stop();
         m_refreshTimerShouldStop = false;
     }
+}
+
+void ProbeScopeWindow::sltDockWidgetClosed() {
+    auto dWidget = qobject_cast<ads::CDockWidget *>(sender());
+
+    if (dWidget) {
+        // TODO: Forward to remove function for now cuz the two are basically equivalent to me
+        sltDockWidgetRemoved(dWidget);
+    }
+}
+
+void ProbeScopeWindow::sltDockWidgetRemoved(ads::CDockWidget *dWidget) {
+    if (dWidget->property(DockWidgetTypeProperty).value<DockWidgetType>() == DWT_PlotArea) {
+        sltRemovePlotArea(dWidget->property(DockWidgetPlotAreaIdProperty).value<size_t>());
+    }
+
+    // TODO: What if I close other panels?
 }

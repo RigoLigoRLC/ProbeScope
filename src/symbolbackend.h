@@ -150,6 +150,11 @@ public:
     static QString errorString(Error error);
 
     /**
+     * @brief Checks if a symbol file is currently loaded.
+     */
+    bool isSymbolFileLoaded() { return m_loadSucceeded; }
+
+    /**
      * @brief Switch the currently selected symbol file. Usually this is called when user selects a new symbol file,
      *        along with several other methods to refresh the entire workspace state.
      *
