@@ -23,6 +23,7 @@ bool SelectProbeDialog::execWithState(QVector<probelib::IProbeLib *> availablePr
     {
         // Prevent combobox from firing signal for now
         QSignalBlocker blocker(ui->cmbProbeLib);
+        ui->cmbProbeLib->clear();
         foreach (auto probeLib, availableProbeLibs) {
             ui->cmbProbeLib->addItem(probeLib->name());
             if (probeLib == currentProbeLib) {
