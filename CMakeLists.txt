@@ -108,6 +108,10 @@ qm_configure_target(probescope
     QT_LINKS Core Widgets Svg
 )
 
+if (WIN32)
+    target_link_libraries(probescope PRIVATE dbghelp.lib)
+endif ()
+
 install(TARGETS probescope)
 
 # Deal with translations
