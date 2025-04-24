@@ -105,5 +105,5 @@ double AcquisitionBuffer::valueToDouble(Value value) {
 }
 
 double AcquisitionBuffer::timepointToMillisecond(Timepoint reference, Timepoint timepoint) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint - reference).count() / 1000.0;
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint - reference).count() / 1000.0;
 }
