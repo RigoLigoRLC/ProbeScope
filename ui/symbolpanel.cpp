@@ -146,7 +146,7 @@ void SymbolPanel::sltAddWatchEntryClicked() {
     }
 
 
-    QMessageBox::information(this, "Expression generation", expr);
+    // QMessageBox::information(this, "Expression generation", expr);
     auto parseResult = ExpressionEvaluator::Parser::parseToBytecode(expr);
     qInfo() << expr << "Evaluation:";
     if (parseResult.isErr()) {
