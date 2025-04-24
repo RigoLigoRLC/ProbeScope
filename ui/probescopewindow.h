@@ -109,6 +109,7 @@ private slots:
     void sltRefreshTimerExpired();
     void sltDockWidgetClosed();
     void sltDockWidgetRemoved(ads::CDockWidget *dWidget);
+    void sltFocusedDockWidgetChanged(ads::CDockWidget *old, ads::CDockWidget *now);
 
 signals:
     void plotAreaClosed(size_t id);

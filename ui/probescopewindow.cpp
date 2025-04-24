@@ -398,3 +398,9 @@ void ProbeScopeWindow::sltDockWidgetRemoved(ads::CDockWidget *dWidget) {
 
     // TODO: What if I close other panels?
 }
+
+void ProbeScopeWindow::sltFocusedDockWidgetChanged(ads::CDockWidget *old, ads::CDockWidget *now) {
+    if (now->property(DockWidgetTypeProperty).value<DockWidgetType>() == DWT_PlotArea) {
+        m_workspace->setActivePlotArea(now->property(DockWidgetPlotAreaIdProperty).value<size_t>());
+    }
+}
