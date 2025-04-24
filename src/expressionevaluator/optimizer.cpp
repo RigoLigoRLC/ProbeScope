@@ -87,6 +87,10 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
             case LoadBase: {
                 uint64_t address;
                 auto base = es.regBaseScope->getVariable(std::get<QString>(imm));
+                if (!base) {
+                    err = QObject::tr("Variable \"%1\" does not exist.").arg(std::get<QString>(imm));
+                    return Bytecode::ErrorBreak;
+                }
                 es.regBaseType = base->type;
                 address = base->offset;
                 ret.pushInstruction(MetaLoadInt, address);
