@@ -464,7 +464,8 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                 // Simply return
                 return;
             } else {
-                Q_UNREACHABLE();
+                qCritical() << "Variable" << variableDieRef << "no name???";
+                return;
             }
         }
 
@@ -1462,6 +1463,7 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             ret = getUnsupported();
             break; // TODO:
         // WTF
+        case DW_TAG_rvalue_reference_type:
         case DW_TAG_ptr_to_member_type:
         case DW_TAG_unspecified_type: ret = getUnsupported(); break;
         default: Q_UNREACHABLE();
