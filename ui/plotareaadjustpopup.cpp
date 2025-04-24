@@ -63,6 +63,8 @@ void PlotAreaAdjustPopup::showEvent(QShowEvent *event) {
 void PlotAreaAdjustPopup::initComboboxInternalList() {
     // TODO: configurable?
     m_horizRangeList = {
+        {0.01,    "0.01s"},
+        {0.1,     "0.1s" },
         {1,       "1s"   },
         {5,       "5s"   },
         {10,      "10s"  },
@@ -76,6 +78,8 @@ void PlotAreaAdjustPopup::initComboboxInternalList() {
     };
 
     m_vertRangeList = {
+        {0.01,      "0.01"       },
+        {0.1,       "0.1"        },
         {1,         "1"          },
         {5,         "5"          },
         {10,        "10"         },
@@ -127,10 +131,10 @@ void PlotAreaAdjustPopup::initComboboxInternalList() {
 void PlotAreaAdjustPopup::loadDefaultViewParams() {
     // TODO: make configurable
     // Horizontal: 10s
-    ui->cmbTimeRange->setCurrentIndex(2);
+    ui->cmbTimeRange->setCurrentIndex(4);
     // Vertical: +-10, with auto fit
     ui->btnVerticalZoomRangePlusMinus->setChecked(true);
-    ui->cmbVerticalZoomRange->setCurrentIndex(2);
+    ui->cmbVerticalZoomRange->setCurrentIndex(4);
     ui->btnVerticalFitAll->setChecked(true);
 }
 
