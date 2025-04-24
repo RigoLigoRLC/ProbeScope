@@ -125,6 +125,8 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
     connect(ui->actionStopAcquisition, &QAction::triggered, this, &ProbeScopeWindow::sltStopAcquisition);
     connect(ui->actionNewPlotArea, &QAction::triggered, this, &ProbeScopeWindow::sltNewPlotArea);
 
+    connect(ui->actionCrashApplication, &QAction::triggered, this, &ProbeScopeWindow::sltCrashApp);
+
     // UI internal signals
     connect(&m_refreshTimer, &QTimer::timeout, this, &ProbeScopeWindow::sltRefreshTimerExpired);
     connect(m_dockMgr, &ads::CDockManager::dockWidgetRemoved, this, &ProbeScopeWindow::sltDockWidgetRemoved);
@@ -135,6 +137,10 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
 
     // Misc initialization
     reevaluateConnectionRelatedWidgetEnableStates();
+
+#ifdef NDEBUG
+    ui->actionCrashApplication->setVisible(false);
+#endif
 }
 
 ProbeScopeWindow::~ProbeScopeWindow() {
@@ -246,6 +252,10 @@ void ProbeScopeWindow::sltStopAcquisition() {
 
 void ProbeScopeWindow::sltNewPlotArea() {
     m_workspace->addPlotArea();
+}
+
+void ProbeScopeWindow::sltCrashApp() {
+    (*((volatile int *) 0)) = 0;
 }
 
 void ProbeScopeWindow::sltSelectProbe() {

@@ -92,6 +92,8 @@ private slots:
     void sltStopAcquisition();
     void sltNewPlotArea();
 
+    void sltCrashApp();
+
     // Status bar
     void sltSelectProbe();
     void sltSelectDevice();

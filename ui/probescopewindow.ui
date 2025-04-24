@@ -29,7 +29,14 @@
     </property>
     <addaction name="actionProbeBenchmark"/>
    </widget>
+   <widget class="QMenu" name="menuDebug">
+    <property name="title">
+     <string>Debug</string>
+    </property>
+    <addaction name="actionCrashApplication"/>
+   </widget>
    <addaction name="menuTools"/>
+   <addaction name="menuDebug"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolbarAcquisitionControl">
@@ -84,6 +91,17 @@
    </property>
    <property name="toolTip">
     <string>Create a new plot area.</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionCrashApplication">
+   <property name="text">
+    <string>Crash Application</string>
+   </property>
+   <property name="toolTip">
+    <string>(Test only) Crashes the application.</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>
