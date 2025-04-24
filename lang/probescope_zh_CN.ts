@@ -25,6 +25,120 @@
     </message>
 </context>
 <context>
+    <name>PlotAreaAdjustPopup</name>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="14"/>
+        <source>Plot Adjustments</source>
+        <translation>绘图调节</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="20"/>
+        <source>HORIZONTAL</source>
+        <translation>水平</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="79"/>
+        <source>Time Range</source>
+        <translation>时间范围</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="91"/>
+        <location filename="../ui/plotareaadjustpopup.ui" line="219"/>
+        <source>Auto Fit All</source>
+        <translation>自动缩放到适合</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="106"/>
+        <source>VERTICAL</source>
+        <translation>垂直</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="177"/>
+        <source>Zoom Range</source>
+        <translation>缩放范围</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="201"/>
+        <source>±</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="236"/>
+        <source>Logarithmic Scale</source>
+        <translation>对数坐标轴</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.ui" line="257"/>
+        <source>Preset</source>
+        <translation>使用预设</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="96"/>
+        <source>Normalized (-1~1)</source>
+        <translation>归一化 (-1~1)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="97"/>
+        <source>int8_t (-128~127)</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="98"/>
+        <source>uint8_t (0~255)</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="99"/>
+        <source>int16_t (-32768~32767)</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="100"/>
+        <source>int16_t (0~65535)</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="101"/>
+        <source>Circle (0~360)</source>
+        <translation>圆 (0~360)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="102"/>
+        <source>Circle (0~720)</source>
+        <translation>圆 (0~720)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="103"/>
+        <source>Circle (-180~180)</source>
+        <translation>圆 (-180~180)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="104"/>
+        <source>Circle (-360~360)</source>
+        <translation>圆 (-360~360)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="105"/>
+        <source>Circle (0~π)</source>
+        <translation>圆 (0~π)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="106"/>
+        <source>Circle (0~2π)</source>
+        <translation>圆 (0~2π)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="107"/>
+        <source>Circle (-π/2~π/2)</source>
+        <translation>圆 (-π/2~π/2)</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareaadjustpopup.cpp" line="108"/>
+        <source>Circle (-π~π)</source>
+        <translation>圆 (-π~π)</translation>
+    </message>
+</context>
+<context>
     <name>PlotAreaColumnDelegate</name>
     <message>
         <location filename="../ui/delegate/plotareacolumndelegate.cpp" line="125"/>
@@ -51,7 +165,12 @@
         <translation></translation>
     </message>
     <message>
-        <location filename="../ui/plotareapanel.ui" line="69"/>
+        <location filename="../ui/plotareapanel.ui" line="70"/>
+        <source>Autoscroll</source>
+        <translation>自动滚动</translation>
+    </message>
+    <message>
+        <location filename="../ui/plotareapanel.ui" line="86"/>
         <source>Adjust</source>
         <translation>调节…</translation>
     </message>
@@ -273,27 +392,32 @@ ProbeScope 发行时默认包含了一个探头库。
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="99"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="91"/>
+        <source>Variable &quot;%1&quot; does not exist.</source>
+        <translation>变量“%1”不存在。</translation>
+    </message>
+    <message>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="103"/>
         <source>The type being dereferenced is not pointer or array type</source>
         <translation>解引用的不是指针或者数组类型</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="115"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="119"/>
         <source>%1 does not have a child named %2</source>
         <translation>类型 %1 没有叫做 %2 的成员</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="148"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="152"/>
         <source>You may only add offset a pointer or an array</source>
         <translation>只能对指针或者数组应用偏移量</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="181"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="185"/>
         <source>Got a non-numeric type on evaluation</source>
         <translation>求值时得到了非数值类型的数据</translation>
     </message>
     <message>
-        <location filename="../src/expressionevaluator/optimizer.cpp" line="207"/>
+        <location filename="../src/expressionevaluator/optimizer.cpp" line="211"/>
         <source>Got a non-numeric type on return</source>
         <translation>返回结果时得到了非数值类型的数据</translation>
     </message>
@@ -649,32 +773,32 @@ Command: %2</source>
         <translation>双击添加监视条目……</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="175"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="184"/>
         <source>Display name</source>
         <translation>显示名称</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="180"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="189"/>
         <source>Expression</source>
         <translation>表达式</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="185"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="194"/>
         <source>Plot areas</source>
         <translation>绘图区</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="190"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="199"/>
         <source>Thickness</source>
         <translation>线宽</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="195"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="204"/>
         <source>Style</source>
         <translation>线型</translation>
     </message>
     <message>
-        <location filename="../src/models/watchentrymodel.cpp" line="200"/>
+        <location filename="../src/models/watchentrymodel.cpp" line="209"/>
         <source>Frequency</source>
         <translation>频率</translation>
     </message>
@@ -737,7 +861,7 @@ Do you wish to choose another place for cache file?</source>
         <translation>无法将缓冲文件映射至系统内存。ProbeScope 即将退出。</translation>
     </message>
     <message>
-        <location filename="../src/workspacemodel.cpp" line="182"/>
+        <location filename="../src/workspacemodel.cpp" line="183"/>
         <source>Graph %1</source>
         <translation>图形 %1</translation>
     </message>
