@@ -59,6 +59,11 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
             switch (role) {
                 case Qt::EditRole:
                 case Qt::DisplayRole: return m_workspace->getWatchEntryGraphProperty(entry, Expression).unwrap();
+                case Qt::ForegroundRole: {
+                    auto expressionOkay =
+                        m_workspace->getWatchEntryGraphProperty(entry, ExpressionOkay).unwrap().toBool();
+                    return expressionOkay ? QVariant() : QColor(255, 0, 0); // TODO: Proper warning
+                }
             }
             break;
         }
@@ -100,7 +105,8 @@ QVariant WatchEntryModel::data(const QModelIndex &index, int role) const {
 
         // These are never shown as a column
         case MaxColumns:
-        case FrequencyFeedback: return QVariant();
+        case FrequencyFeedback:
+        case ExpressionOkay: return QVariant();
     }
     return QVariant();
 }
@@ -144,7 +150,8 @@ bool WatchEntryModel::setData(const QModelIndex &index, const QVariant &value, i
             case LineStyle: return m_workspace->setWatchEntryGraphProperty(entry, LineStyle, value);
             case FrequencyLimit: return m_workspace->setWatchEntryGraphProperty(entry, FrequencyLimit, value);
             case MaxColumns:
-            case FrequencyFeedback: Q_UNREACHABLE(); return m_workspace->setWatchEntryGraphProperty(-1, MaxColumns, 0);
+            case FrequencyFeedback:
+            case ExpressionOkay: Q_UNREACHABLE(); return m_workspace->setWatchEntryGraphProperty(-1, MaxColumns, 0);
         }
         return m_workspace->setWatchEntryGraphProperty(-1, MaxColumns, 0);
     }();
@@ -203,7 +210,8 @@ QVariant WatchEntryModel::headerData(int section, Qt::Orientation orientation, i
                 default: break;
             }
         case MaxColumns:
-        case FrequencyFeedback: return super();
+        case FrequencyFeedback:
+        case ExpressionOkay: return super();
     }
     return super(); // All unhandled cases goes to super
 }

@@ -138,6 +138,13 @@ public:
     Result<void, Error> removePlotArea(size_t areaId);
 
     /**
+     * @brief The UI will set the active plot area once an area gets a focus.
+     * @param areaId  Plot area ID.
+     * @return On success: nothing. On fail: error code.
+     */
+    Result<void, Error> setActivePlotArea(size_t areaId);
+
+    /**
      * @brief Request adding a new watch entry. This is a request from UI, and UI changes will be reflected back with
      * other signals.
      * @param expression The expression of the desired variable to watch.
@@ -211,6 +218,11 @@ private:
     size_t getNextPlotAreaId() { return m_maxPlotAreaId++; }
     size_t getNextWatchEntryId() { return m_maxWatchEntryId++; }
     QColor getPlotColorBasedOnEntryId(size_t id) { return m_defaultPlotColors[id % m_defaultPlotColors.size()]; }
+
+    // updateAcquisition: if true, then will send a bytecode change request. This should be set to true when trying to
+    // hot edit the expression after it's been added to acquisition hub
+    void refreshExpressionBytecodes(bool updateAcquisition = false);
+    bool refreshExpressionBytecodes(size_t entryId, bool updateAcquisition = false);
 
 private slots:
     void sltAcquisitionFrequencyFeedbackArrived(size_t entryId);

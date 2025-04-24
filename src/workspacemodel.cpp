@@ -114,8 +114,11 @@ WorkspaceModel::~WorkspaceModel() {}
 
 Result<void, SymbolBackend::Error> WorkspaceModel::loadSymbolFile(QString path) {
     auto result = m_symbolBackend->switchSymbolFile(path);
+
     // TODO: discard watch entries when symbol file differs
-    // TODO: refresh watch entries' bytecode
+
+    // Refresh watch entries' bytecodes
+    refreshExpressionBytecodes(true);
 
     if (result.isOk()) {
         // Initialize plot area if we don't have any
@@ -143,6 +146,14 @@ Result<void, WorkspaceModel::Error> WorkspaceModel::removePlotArea(size_t areaId
     return Ok();
 }
 
+Result<void, WorkspaceModel::Error> WorkspaceModel::setActivePlotArea(size_t areaId) {
+    if (!m_plotAreaIds.contains(areaId)) {
+        return Err(Error::InvalidPlotAreaId);
+    }
+    m_activePlotAreaId = areaId;
+    return Ok();
+}
+
 Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expression, std::optional<size_t> areaId) {
     // To satisfy stupid QSet initializer
     size_t destAreaId[2];
@@ -162,18 +173,8 @@ Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expr
     auto parseResult = ExpressionEvaluator::Parser::parseToBytecode(expression);
     if (parseResult.isErr()) {
         (qWarning() << "Parse of expression" << expression << "failed:").noquote() << parseResult.unwrapErr();
-        // FIXME: Parse failure should preserve the entry
-        return Err(Error::WatchExpressionParseFailed);
     }
 
-    auto bytecode = parseResult.unwrap();
-    auto optimizeResult = ExpressionEvaluator::StaticOptimize(bytecode, m_symbolBackend.get());
-    if (optimizeResult.isErr()) {
-        (qWarning() << "Static optimization of bytecode failed. Disassembly:\n").noquote()
-            << bytecode.disassemble() << "Error message:" << optimizeResult.unwrapErr();
-        return Err(Error::WatchExpressionParseFailed);
-    }
-    auto optimizedBytecode = optimizeResult.unwrap();
 
     // TODO: Make default config adjustable
     auto entryId = getNextWatchEntryId();
@@ -187,11 +188,14 @@ Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expr
         .plotThickness = 1,
         .plotStyle = Qt::SolidLine,
         .data = QSharedPointer<QCPGraphDataContainer>(new QCPGraphDataContainer),
-        .exprBytecode = bytecode,
-        .staticOptimizedBytecode = optimizedBytecode,
-        .runtimeBytecode = optimizedBytecode  // FIXME: Should be evaluated on first run
+        .exprBytecode = (parseResult.isOk() ? std::optional(parseResult.unwrap())
+                                            : std::optional<ExpressionEvaluator::Bytecode>{{}}
+          ),
+        .staticOptimizedBytecode = std::nullopt,
+        .runtimeBytecode = std::nullopt
     };
     auto &entry = m_watchEntries[entryId];
+    refreshExpressionBytecodes(entryId);
 
     emit requestAssignGraphOnPlotArea(entryId, destAreaId[0]);
 
@@ -201,10 +205,11 @@ Result<size_t, WorkspaceModel::Error> WorkspaceModel::addWatchEntry(QString expr
     // Add to acquisition buffer channels
     m_acquisitionBuffer->addChannel(entryId);
 
-    // Add to acquisition hub
-    // FIXME: account for failing case. In the future we'll have to preserve a failing entry and let it do simply
-    // nothing
-    m_acquisitionHub->addWatchEntry(entryId, entry.runtimeBytecode.value(), entry.acquisitionFrequencyLimit);
+    // Add to acquisition hub. If an entry doesn't have a valid runtime bytecode, it's disabled at first.
+    m_acquisitionHub->addWatchEntry(entryId, entry.runtimeBytecode.has_value(),
+                                    entry.runtimeBytecode.has_value() ? entry.runtimeBytecode.value()
+                                                                      : ExpressionEvaluator::Bytecode(),
+                                    entry.acquisitionFrequencyLimit);
 
     return Err(Error::NoError);
 }
@@ -261,6 +266,8 @@ Result<QVariant, WorkspaceModel::Error> WorkspaceModel::getWatchEntryGraphProper
         case WatchEntryModel::FrequencyLimit: return Ok(QVariant(entry.acquisitionFrequencyLimit));
         case WatchEntryModel::FrequencyFeedback:
             return Ok(QVariant(m_acquisitionBuffer->getChannelFrequencyFeedback(entryId)));
+        case WatchEntryModel::ExpressionOkay:
+            return Ok(QVariant(entry.exprBytecode.has_value() && entry.runtimeBytecode.has_value()));
         default: return Ok(QVariant());
     }
 }
@@ -283,6 +290,23 @@ Result<void, WorkspaceModel::Error>
                 return Ok(true);
             case WatchEntryModel::DisplayName: entry.displayName = data.toString(); return Ok(true);
             case WatchEntryModel::Expression: {
+                // FIXME: this parse code appeared twice. Abstract it away
+                auto expression = data.toString();
+                entry.expression = expression;
+                auto parseResult = ExpressionEvaluator::Parser::parseToBytecode(expression);
+                if (parseResult.isErr()) {
+                    (qWarning() << "Parse of expression" << expression << "failed:").noquote()
+                        << parseResult.unwrapErr();
+
+                    entry.exprBytecode = std::nullopt;
+                    entry.staticOptimizedBytecode = std::nullopt;
+                    entry.runtimeBytecode = std::nullopt;
+                    m_acquisitionHub->setEntryEnabled(entryId, false); // You ded
+                    // TODO: Pop error message
+                    return Ok(false); // We still return Ok here because we want the model to emit dataChanged
+                }
+                entry.exprBytecode = {parseResult.unwrap()};
+                refreshExpressionBytecodes(entryId, true);
                 return Ok(false);
             }
             case WatchEntryModel::PlotAreas: {
@@ -318,7 +342,8 @@ Result<void, WorkspaceModel::Error>
                 entry.acquisitionFrequencyLimit = data.toInt();
                 return Ok(true);
             case WatchEntryModel::MaxColumns:
-            case WatchEntryModel::FrequencyFeedback: return Err(Error::InvalidWatchEntryProperty);
+            case WatchEntryModel::FrequencyFeedback:
+            case WatchEntryModel::ExpressionOkay: return Err(Error::InvalidWatchEntryProperty);
         }
         return Err(Error::InvalidWatchEntryProperty);
     }();
@@ -373,6 +398,50 @@ void WorkspaceModel::notifyAcquisitionStopped() {
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
+
+void WorkspaceModel::refreshExpressionBytecodes(bool updateAcquisition) {
+    //
+    for (auto [id, _] : m_watchEntries.asKeyValueRange()) {
+        refreshExpressionBytecodes(id, updateAcquisition);
+    }
+}
+
+bool WorkspaceModel::refreshExpressionBytecodes(size_t entryId, bool updateAcquisition) {
+    //
+    if (auto it = m_watchEntries.find(entryId); it == m_watchEntries.end()) {
+        qCritical() << "Entry ID" << entryId << "not found!";
+        return false;
+    } else if (auto &entry = *it; !entry.exprBytecode.has_value()) {
+        qWarning() << "Trying to refresh expression bytecode on an entry whose evaluation didn't even pass:" << entryId;
+        return false;
+    } else {
+        auto &bytecode = entry.exprBytecode.value();
+        auto optimizeResult = ExpressionEvaluator::StaticOptimize(bytecode, m_symbolBackend.get());
+        if (optimizeResult.isErr()) {
+            (qWarning() << "Static optimization of bytecode failed. Disassembly:\n").noquote()
+                << bytecode.disassemble() << "Error message:" << optimizeResult.unwrapErr();
+            entry.staticOptimizedBytecode = std::nullopt;
+            entry.runtimeBytecode = std::nullopt;
+            goto failAndTemporarilyDisable;
+        }
+
+        // FIXME: single eval block is not considered here at all. Implement this in the future
+        entry.staticOptimizedBytecode = optimizeResult.unwrap();
+        entry.runtimeBytecode = optimizeResult.unwrap();
+
+        if (updateAcquisition) {
+            m_acquisitionHub->changeWatchEntryBytecode(entryId, entry.runtimeBytecode.value());
+            m_acquisitionHub->setEntryEnabled(entryId, true); // You passed
+        }
+        return true;
+    }
+
+failAndTemporarilyDisable:
+    if (updateAcquisition) {
+        m_acquisitionHub->setEntryEnabled(entryId, false);
+    }
+    return false;
+}
 
 void WorkspaceModel::sltAcquisitionFrequencyFeedbackArrived(size_t entryId) {
     m_watchEntryModel->notifyFrequencyFeedbackChanged(entryId);

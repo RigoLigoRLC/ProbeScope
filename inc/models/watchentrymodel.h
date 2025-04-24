@@ -24,6 +24,7 @@ public:
 
         MaxColumns,
         FrequencyFeedback,
+        ExpressionOkay,
     };
 
     //

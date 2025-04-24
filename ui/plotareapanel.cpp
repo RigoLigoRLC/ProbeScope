@@ -166,7 +166,8 @@ void PlotAreaPanel::plotPropertyChanged(size_t entryId, WatchEntryModel::Columns
         case WatchEntryModel::FrequencyLimit:
         case WatchEntryModel::PlotAreas:
         case WatchEntryModel::MaxColumns:
-        case WatchEntryModel::FrequencyFeedback: break;
+        case WatchEntryModel::FrequencyFeedback:
+        case WatchEntryModel::ExpressionOkay: break;
     }
 }
 
@@ -199,7 +200,7 @@ void PlotAreaPanel::sltHorizontalZoomChanged() {
 
     m_horizAutoFit = autoFit;
 
-    ui->scrollHorizontal->setDisabled(m_horizAutoScroll || m_horizAutoFit);
+    ui->scrollHorizontal->setDisabled(m_horizAutoFit);
 
     // try to keep the current center
     // If the destination range exceeds the whole [0, observedXMax], place left bound at zero
@@ -207,9 +208,9 @@ void PlotAreaPanel::sltHorizontalZoomChanged() {
     if (rangeSecs * SecToPlotCoeff > m_currentObservedXMax || range.center() < rangeSecs * SecToPlotCoeff / 2) {
         ui->plot->xAxis->setRange(0, rangeSecs * SecToPlotCoeff);
     } else {
-        range.lower = range.center() - rangeSecs / 2 * SecToPlotCoeff;
-        range.upper = range.center() + rangeSecs / 2 * SecToPlotCoeff;
-        ui->plot->xAxis->setRange(range);
+        QCPRange newRange{range.center() - rangeSecs / 2 * SecToPlotCoeff,
+                          range.center() + rangeSecs / 2 * SecToPlotCoeff};
+        ui->plot->xAxis->setRange(newRange);
     }
 
     replot();

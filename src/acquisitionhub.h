@@ -26,8 +26,9 @@ public:
 
     void setFrequencyFeedbackReportInterval();
 
-    void addWatchEntry(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode, int freqLimit);
+    void addWatchEntry(size_t entryId, bool enabled, ExpressionEvaluator::Bytecode runtimeBytecode, int freqLimit);
     void removeWatchEntry(size_t entryId);
+    void setEntryEnabled(size_t entryId, bool enable);
     void changeWatchEntryBytecode(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode);
     void changeWatchEntryFrequencyLimit(size_t entryId, int freqLimit);
 
@@ -41,11 +42,16 @@ private:
     struct RequestExit {};
     struct RequestAddEntry {
         size_t entryId;
+        bool enabled;
         ExpressionEvaluator::Bytecode runtimeBytecode;
         int acquisitionFrequencyLimit;
     };
     struct RequestRemoveEntry {
         size_t entryId;
+    };
+    struct RequestSetEntryEnabled {
+        size_t entryId;
+        bool enable;
     };
     struct RequestChangeEntryBytecode {
         size_t entryId;
@@ -62,6 +68,7 @@ private:
         RequestExit,
         RequestAddEntry,
         RequestRemoveEntry,
+        RequestSetEntryEnabled,
         RequestChangeEntryBytecode,
         RequestChangeEntryFrequencyLimit
     >; // clang-format on
@@ -74,6 +81,7 @@ private:
         ExpressionEvaluator::Bytecode bytecode;
         ExpressionEvaluator::ExecutionState es;
         int frequencyLimit;
+        bool enabled;
         std::chrono::steady_clock::time_point lastAcquisitionTime;
         std::chrono::steady_clock::duration minimumWaitDuration;
 

@@ -27,12 +27,17 @@ void AcquisitionHub::stopAcquisition() {
 
 void AcquisitionHub::setFrequencyFeedbackReportInterval() {}
 
-void AcquisitionHub::addWatchEntry(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode, int freqLimit) {
-    sendRequest(RequestAddEntry{entryId, runtimeBytecode, freqLimit});
+void AcquisitionHub::addWatchEntry(size_t entryId, bool enabled, ExpressionEvaluator::Bytecode runtimeBytecode,
+                                   int freqLimit) {
+    sendRequest(RequestAddEntry{entryId, enabled, runtimeBytecode, freqLimit});
 }
 
 void AcquisitionHub::removeWatchEntry(size_t entryId) {
     sendRequest(RequestRemoveEntry{entryId});
+}
+
+void AcquisitionHub::setEntryEnabled(size_t entryId, bool enable) {
+    sendRequest(RequestSetEntryEnabled{entryId, enable});
 }
 
 void AcquisitionHub::changeWatchEntryBytecode(size_t entryId, ExpressionEvaluator::Bytecode runtimeBytecode) {
@@ -62,6 +67,11 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
         auto now = std::chrono::steady_clock::now();
         if (running) {
             for (auto it = self->m_acquisitionEntries.begin(); it != self->m_acquisitionEntries.end(); ++it) {
+                // Check if an entry is enabled
+                if (!it->enabled) {
+                    continue;
+                }
+
                 // Check if deadline reached, if not, don't work on this acquisition just for now
                 // FIXME: use a timer to wake this thread up.
                 if (now - it->lastAcquisitionTime < it->minimumWaitDuration) {
@@ -174,6 +184,7 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                         self->m_acquisitionEntries[arg.entryId] = {.bytecode = arg.runtimeBytecode,
                                                                    .es = {},
                                                                    .frequencyLimit = arg.acquisitionFrequencyLimit,
+                                                                   .enabled = arg.enabled,
                                                                    .acquisitionCounter = 0};
                     } else if MATCH (RequestRemoveEntry) {
                         if (!self->m_acquisitionEntries.contains(arg.entryId)) {
@@ -181,6 +192,17 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                             return;
                         }
                         self->m_acquisitionEntries.remove(arg.entryId);
+                    } else if MATCH (RequestSetEntryEnabled) {
+                        if (!self->m_acquisitionEntries.contains(arg.entryId)) {
+                            qCritical() << "AcquisitionHub does not have entry" << arg.entryId;
+                            return;
+                        }
+                        if (!arg.enable && running) {
+                            // Insert QNaN here to break the graph line. This is a documented valid usage of QCustomPlot
+                            self->m_bufferChannel->addDataPoint(arg.entryId, now, qQNaN());
+                            self->m_acquisitionEntries[arg.entryId].es.resetAll();
+                        }
+                        self->m_acquisitionEntries[arg.entryId].enabled = arg.enable;
                     } else if MATCH (RequestChangeEntryBytecode) {
                         if (!self->m_acquisitionEntries.contains(arg.entryId)) {
                             qCritical() << "AcquisitionHub does not have entry" << arg.entryId;
