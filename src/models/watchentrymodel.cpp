@@ -154,6 +154,8 @@ bool WatchEntryModel::setData(const QModelIndex &index, const QVariant &value, i
         return true;
     }
 
+    // TODO: Pop error message if isErr
+
     return false;
 }
 

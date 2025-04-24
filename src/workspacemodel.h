@@ -39,6 +39,7 @@ public:
         InvalidWatchEntryIndex,
         InvalidPlotAreaId,
         InvalidWatchEntryProperty,
+        InvalidWatchEntryPropertyValue,
     };
     Q_ENUM(Error);
 

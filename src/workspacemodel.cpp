@@ -275,7 +275,12 @@ Result<void, WorkspaceModel::Error>
     auto needsEmitPropChangedSignal = [&]() -> Result<bool, Error> {
         auto &entry = m_watchEntries[entryId];
         switch (prop) {
-            case WatchEntryModel::Color: entry.plotColor = data.value<QColor>(); return Ok(true);
+            case WatchEntryModel::Color:
+                if (!data.canView(QMetaType(QMetaType::QColor))) {
+                    return Err(Error::InvalidWatchEntryPropertyValue);
+                }
+                entry.plotColor = data.value<QColor>();
+                return Ok(true);
             case WatchEntryModel::DisplayName: entry.displayName = data.toString(); return Ok(true);
             case WatchEntryModel::Expression: {
                 return Ok(false);
@@ -294,9 +299,24 @@ Result<void, WorkspaceModel::Error>
                 entry.associatedPlotAreas = newSet;
                 return Ok(false);
             }
-            case WatchEntryModel::Thickness: entry.plotThickness = data.toInt(); return Ok(true);
-            case WatchEntryModel::LineStyle: entry.plotStyle = data.value<Qt::PenStyle>(); return Ok(true);
-            case WatchEntryModel::FrequencyLimit: entry.acquisitionFrequencyLimit = data.toInt(); return Ok(true);
+            case WatchEntryModel::Thickness:
+                if (!data.canView(QMetaType(QMetaType::Int))) {
+                    return Err(Error::InvalidWatchEntryPropertyValue);
+                }
+                entry.plotThickness = data.toInt();
+                return Ok(true);
+            case WatchEntryModel::LineStyle:
+                if (!data.canView(QMetaType(qMetaTypeId<Qt::PenStyle>()))) {
+                    return Err(Error::InvalidWatchEntryPropertyValue);
+                }
+                entry.plotStyle = data.value<Qt::PenStyle>();
+                return Ok(true);
+            case WatchEntryModel::FrequencyLimit:
+                if (!data.canView(QMetaType(QMetaType::Int))) {
+                    return Err(Error::InvalidWatchEntryPropertyValue);
+                }
+                entry.acquisitionFrequencyLimit = data.toInt();
+                return Ok(true);
             case WatchEntryModel::MaxColumns:
             case WatchEntryModel::FrequencyFeedback: return Err(Error::InvalidWatchEntryProperty);
         }
