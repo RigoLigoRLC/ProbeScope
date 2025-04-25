@@ -278,7 +278,7 @@ void ProbeScopeWindow::sltSelectProbe() {
         auto result = probeLibHost->selectProbe(probeLib, probe);
         if (result.isErr()) {
             QMessageBox::critical(this, tr("Failed to connect to probe"), result.unwrapErr());
-            m_lblConnection->setText(tr("(No Probe Selected)"));
+            // m_lblConnection->setText(tr("(No Probe Selected)"));
         } else {
             m_lblConnection->setText(tr("Probe: %1").arg(probe->name()));
         }
