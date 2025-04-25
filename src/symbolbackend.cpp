@@ -1003,16 +1003,19 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
             if (dwarf_siblingof_c(firstSubrange, &subrange, &m_err) == DW_DLV_NO_ENTRY) {
                 // Only one subrange. Directly create TypeModified
                 DwarfAttrList attr(m_dwarfDbg, firstSubrange);
-                if (!attr.has(DW_AT_upper_bound)) {
+                if (!attr.has(DW_AT_upper_bound) && !attr.has(DW_AT_count)) {
                     qCritical() << "DW_TAG_array_type" << typeDie << "Cannot get subrange upperbound";
                     return Err(Error::DwarfDieFormatInvalid);
                 }
-                auto upperRangeResult = DwarfFormInt(attr(DW_AT_upper_bound));
-                if (upperRangeResult.isErr()) {
+                DwarfFormedInt upperRange;
+                if (auto upperRangeResult = DwarfFormInt(attr(DW_AT_upper_bound)); upperRangeResult.isOk()) {
+                    upperRange = upperRangeResult.unwrap();
+                } else if (auto countResult = DwarfFormInt(attr(DW_AT_count)); countResult.isOk()) {
+                    upperRange = countResult.unwrap();
+                } else {
                     qCritical() << "DW_TAG_array_type" << typeDie << "Cannot form subrange upperbound";
                     return Err(Error::DwarfDieFormatInvalid);
                 }
-                auto upperRange = upperRangeResult.unwrap();
                 // Keil generates ubound=0 for flexible array (a[]), GCC generates ubound=-1.
                 // We unify it to be zero here (this will also be the convention in internal type representation)
                 if (upperRange.s <= 0) {
@@ -1033,16 +1036,19 @@ Result<IType::p, SymbolBackend::Error> SymbolBackend::resolveTypeDie(SymbolBacke
                 auto lastLayerBaseType = baseTypeResult.unwrap();
                 for (int i = subranges.size() - 1; i >= 0; i--) {
                     DwarfAttrList attr(m_dwarfDbg, subranges[i]);
-                    if (!attr.has(DW_AT_upper_bound)) {
+                    if (!attr.has(DW_AT_upper_bound) && !attr.has(DW_AT_count)) {
                         qCritical() << "DW_TAG_array_type" << typeDie << "Cannot get subrange upperbound";
                         return Err(Error::DwarfDieFormatInvalid);
                     }
-                    auto upperRangeResult = DwarfFormInt(attr(DW_AT_upper_bound));
-                    if (upperRangeResult.isErr()) {
+                    DwarfFormedInt upperRange;
+                    if (auto upperRangeResult = DwarfFormInt(attr(DW_AT_upper_bound)); upperRangeResult.isOk()) {
+                        upperRange = upperRangeResult.unwrap();
+                    } else if (auto countResult = DwarfFormInt(attr(DW_AT_count)); countResult.isOk()) {
+                        upperRange = countResult.unwrap();
+                    } else {
                         qCritical() << "DW_TAG_array_type" << typeDie << "Cannot form subrange upperbound";
                         return Err(Error::DwarfDieFormatInvalid);
                     }
-                    auto upperRange = upperRangeResult.unwrap();
                     // Keil generates ubound=0 for flexible array (a[]), GCC generates ubound=-1.
                     // We unify it to be zero here (this will also be the convention in internal type representation)
                     if (upperRange.s <= 0) {
@@ -2177,6 +2183,12 @@ Result<SymbolBackend::DwarfFormedInt, int> SymbolBackend::DwarfFormInt(Dwarf_Att
     Dwarf_Half form = 0;
     DwarfFormedInt formedInt;
     int ret;
+    if (!attr) {
+        // This is possible to happen in normal execution flow.
+        // This check is added because, when we try to get upper bound of an array subrange, we try both upper_bound and
+        // count attributes. And we might attempt an non-existent attribute, and get a NULL pointer. Just safely return.
+        return Err(-1);
+    }
     if ((ret = dwarf_whatform(attr, &form, &m_err)) != DW_DLV_OK) {
         qDebug() << "Cannot get form";
         return Err(ret);
@@ -2184,7 +2196,7 @@ Result<SymbolBackend::DwarfFormedInt, int> SymbolBackend::DwarfFormInt(Dwarf_Att
     if (form != DW_FORM_sdata && form != DW_FORM_udata && form != DW_FORM_data1 && form != DW_FORM_data2 &&
         form != DW_FORM_data4 && form != DW_FORM_data8 && form != DW_FORM_data16) {
         qDebug() << "Invalid form";
-        return Err(0);
+        return Err(int(form));
     }
     if ((form == DW_FORM_sdata) ? ((ret = dwarf_formsdata(attr, &formedInt.s, &m_err)) != DW_DLV_OK)
                                 : ((ret = dwarf_formudata(attr, &formedInt.u, &m_err)) != DW_DLV_OK)) {
