@@ -25,6 +25,7 @@ public:
 
     probelib::IProbeLib *selectedProbeLib() const { return m_selectedProbeLib; }
     probelib::IAvailableProbe::p selectedProbe() const { return m_selectedProbe; }
+    uint32_t connectionSpeedKHz() const;
 
 private:
     void selectProbeLib(probelib::IProbeLib *probeLib);

@@ -282,6 +282,8 @@ void ProbeScopeWindow::sltSelectProbe() {
         } else {
             m_lblConnection->setText(tr("Probe: %1").arg(probe->name()));
         }
+
+        probeLibHost->setConnectionSpeed(m_selectProbeDialog->connectionSpeedKHz());
     }
     reevaluateConnectionRelatedWidgetEnableStates();
 }

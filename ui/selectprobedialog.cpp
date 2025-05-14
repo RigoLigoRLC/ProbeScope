@@ -19,6 +19,7 @@ bool SelectProbeDialog::execWithState(QVector<probelib::IProbeLib *> availablePr
     m_currentProbeLib = currentProbeLib;
     m_currentProbe = currentProbe;
 
+    auto currentName = ui->cmbProbeLib->currentText();
     // Populate UI
     {
         // Prevent combobox from firing signal for now
@@ -31,6 +32,8 @@ bool SelectProbeDialog::execWithState(QVector<probelib::IProbeLib *> availablePr
             }
         }
     }
+    // Reselect the "current" if it still even exists
+    ui->cmbProbeLib->setCurrentText(currentName);
 
     // Let user see the dialog
     show();
@@ -46,6 +49,10 @@ bool SelectProbeDialog::execWithState(QVector<probelib::IProbeLib *> availablePr
         return false;
 
     return true;
+}
+
+uint32_t SelectProbeDialog::connectionSpeedKHz() const {
+    return ui->spinConnSpeed->value();
 }
 
 void SelectProbeDialog::selectProbeLib(probelib::IProbeLib *selectedProbeLib) {
