@@ -736,6 +736,27 @@ Option<IType::p> SymbolBackend::getType(QString typeName) {
     return {};
 }
 
+Option<IType::p> SymbolBackend::getPrimitiveType(IType::Kind primitiveType) {
+    switch (primitiveType) {
+        case IType::Kind::Unsupported: return getUnsupported();
+        case IType::Kind::Uint8:
+        case IType::Kind::Sint8:
+        case IType::Kind::Uint16:
+        case IType::Kind::Sint16:
+        case IType::Kind::Uint32:
+        case IType::Kind::Sint32:
+        case IType::Kind::Uint64:
+        case IType::Kind::Sint64:
+        case IType::Kind::Float32:
+        case IType::Kind::Float64:
+            return m_typeMap[DieRef{static_cast<int>(ReservedCu ::InternalPrimitiveTypes),
+                                    static_cast<Dwarf_Off>(primitiveType)}];
+        case IType::Kind::Structure:
+        case IType::Kind::Union:
+        case IType::Kind::Enumeration: return {};
+    }
+}
+
 /***************************************** INTERNAL UTILS *****************************************/
 
 void SymbolBackend::addDie(int cu, Dwarf_Off cuOffset, Dwarf_Die die, DieRef parentDieRef) {

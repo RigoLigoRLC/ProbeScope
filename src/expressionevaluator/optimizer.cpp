@@ -167,6 +167,21 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                 if (es.regFlags.testFlag(ExecutionState::MemberEvaluated)) {
                     break;
                 }
+                // If we got an enumeration type while evaluating, we just "cast" it into the underlying integer type
+                if (auto enumType = std::dynamic_pointer_cast<TypeEnumeration>(es.regBaseType); enumType) {
+                    // FIXME: we just assume this is signed integer
+                    switch (auto size = enumType->getSizeof(); size) {
+                        case 1: es.regBaseType = symbolBackend->getPrimitiveType(IType::Kind::Sint8).value(); break;
+                        case 2: es.regBaseType = symbolBackend->getPrimitiveType(IType::Kind::Sint16).value(); break;
+                        case 4: es.regBaseType = symbolBackend->getPrimitiveType(IType::Kind::Sint32).value(); break;
+                        case 8: es.regBaseType = symbolBackend->getPrimitiveType(IType::Kind::Sint64).value(); break;
+                        default:
+                            err = QObject::tr("Enumeration type %1 has unsupported byte size: %2")
+                                      .arg(enumType->fullyQualifiedName())
+                                      .arg(size);
+                            return Bytecode::ErrorBreak;
+                    }
+                }
                 switch (es.regBaseType->kind()) {
                     case IType::Kind::Uint8:
                     case IType::Kind::Sint8: ret.pushInstruction(Deref8, {}); break;

@@ -204,6 +204,12 @@ public:
      */
     Option<IType::p> getType(QString typeName);
 
+    /**
+     * @brief Get the internally created primitive type object.
+     * @param primitiveType The type kind you want to get. Notice that only primitive types are accepted.
+     */
+    Option<IType::p> getPrimitiveType(IType::Kind primitiveType);
+
 private:
     /**
      * @brief DWARF Attribute list wrapper for ease of use.
