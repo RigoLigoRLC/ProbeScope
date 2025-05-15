@@ -874,7 +874,10 @@ bool SymbolBackend::isCuQualifiedSourceFile(const DwarfCuData &cu) {
 
 Option<QPair<int, Dwarf_Off>> SymbolBackend::dieOffsetGlobalToCuBased(Dwarf_Off globalOffset) {
     auto cuIdxIt = m_cuOffsetMap.lowerBound(globalOffset);
-    if (cuIdxIt.key() > globalOffset) {
+    // Because "lowerBound" will find an entry that's larger than or equals to the argument, but what we want is the
+    // first number that equals to or is lower than the argument, we detect the "larger than" case and roll back one
+    // notch
+    if (cuIdxIt == m_cuOffsetMap.end() || cuIdxIt.key() > globalOffset) {
         --cuIdxIt;
         Q_ASSERT(cuIdxIt.key() < globalOffset);
         Q_ASSERT(m_cus.size() > cuIdxIt.value());
@@ -2215,12 +2218,13 @@ Result<SymbolBackend::DwarfFormedInt, int> SymbolBackend::DwarfFormInt(Dwarf_Att
         return Err(ret);
     }
     if (form != DW_FORM_sdata && form != DW_FORM_udata && form != DW_FORM_data1 && form != DW_FORM_data2 &&
-        form != DW_FORM_data4 && form != DW_FORM_data8 && form != DW_FORM_data16) {
+        form != DW_FORM_data4 && form != DW_FORM_data8 && form != DW_FORM_data16 && form != DW_FORM_implicit_const) {
         qDebug() << "Invalid form";
         return Err(int(form));
     }
-    if ((form == DW_FORM_sdata) ? ((ret = dwarf_formsdata(attr, &formedInt.s, &m_err)) != DW_DLV_OK)
-                                : ((ret = dwarf_formudata(attr, &formedInt.u, &m_err)) != DW_DLV_OK)) {
+    if ((form == DW_FORM_sdata || form == DW_FORM_implicit_const)
+            ? ((ret = dwarf_formsdata(attr, &formedInt.s, &m_err)) != DW_DLV_OK)
+            : ((ret = dwarf_formudata(attr, &formedInt.u, &m_err)) != DW_DLV_OK)) {
         qDebug() << "Cannot form data";
         return Err(ret);
     }
