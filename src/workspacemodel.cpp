@@ -397,6 +397,40 @@ void WorkspaceModel::notifyAcquisitionStopped() {
 #endif
 }
 
+Result<void, WorkspaceModel::Error> WorkspaceModel::saveAcquisitionData(QString fileName) {
+    size_t maxIndex = std::max_element(m_watchEntries.cbegin(), m_watchEntries.cend(), [](auto lhs, auto rhs) {
+                          return lhs.data->size() < rhs.data->size();
+                      })->data->size();
+
+    QFile f(fileName);
+    if (!f.open(QFile::WriteOnly)) {
+        return Err(Error::SaveFileCannotOpen);
+    }
+
+    QTextStream ts(&f);
+
+    for (auto var : m_watchEntries) {
+        ts << "time_" + var.displayName << ",val_" + var.displayName + ',';
+    }
+    ts << '\n';
+
+    for (size_t i = 0; i < maxIndex; ++i) {
+        for (auto var : m_watchEntries) {
+            if (i >= var.data->size()) {
+                ts << ",,";
+            } else {
+                auto &sample = *var.data->at(i);
+                ts << sample.key << ',' << sample.value << ',';
+            }
+        }
+        ts << '\n';
+    }
+
+    ts.flush();
+    f.close();
+    return Ok();
+}
+
 /***************************************** INTERNAL UTILS *****************************************/
 
 void WorkspaceModel::refreshExpressionBytecodes(bool updateAcquisition) {

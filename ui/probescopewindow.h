@@ -93,6 +93,7 @@ private slots:
     void sltNewPlotArea();
 
     void sltCrashApp();
+    void sltTestSaveData();
 
     // Status bar
     void sltSelectProbe();
