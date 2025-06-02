@@ -35,6 +35,7 @@ public:
 
     enum class Error {
         NoError,
+        SaveFileCannotOpen,
         WatchExpressionParseFailed,
         InvalidWatchEntryIndex,
         InvalidPlotAreaId,
@@ -213,6 +214,14 @@ public:
      * @brief Get the acquisition status from the acquisition hub.
      */
     bool isAcquisitionActive() { return m_acquisitionHub->isAcquisitionActive(); }
+
+    /**
+     * @brief Save acquisition data to CSV file into the file name provided.
+     *
+     * @param fileName destination CSV file name.
+     * @return On success: nothing. On error: an error code.
+     */
+    Result<void, Error> saveAcquisitionData(QString fileName);
 
 private:
     size_t getNextPlotAreaId() { return m_maxPlotAreaId++; }

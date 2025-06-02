@@ -126,6 +126,7 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
     connect(ui->actionNewPlotArea, &QAction::triggered, this, &ProbeScopeWindow::sltNewPlotArea);
 
     connect(ui->actionCrashApplication, &QAction::triggered, this, &ProbeScopeWindow::sltCrashApp);
+    connect(ui->actionTestSaveData, &QAction::triggered, this, &ProbeScopeWindow::sltTestSaveData);
 
     // UI internal signals
     connect(&m_refreshTimer, &QTimer::timeout, this, &ProbeScopeWindow::sltRefreshTimerExpired);
@@ -141,6 +142,7 @@ ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_ref
 #ifdef NDEBUG
     ui->actionCrashApplication->setVisible(false);
 #endif
+    // ui->actionTestSaveData->setVisible(false);
 }
 
 ProbeScopeWindow::~ProbeScopeWindow() {
@@ -257,6 +259,12 @@ void ProbeScopeWindow::sltNewPlotArea() {
 void ProbeScopeWindow::sltCrashApp() {
     (*((volatile int *) 0)) = 0;
 }
+
+void ProbeScopeWindow::sltTestSaveData() {
+    QString name = QInputDialog::getText(this, "Input File Name", "File name");
+
+    m_workspace->saveAcquisitionData(QStringLiteral("D:/expm/undergraduate-thesis/data/probescope-%1.csv").arg(name));
+};
 
 void ProbeScopeWindow::sltSelectProbe() {
     // NOTE: MUST ensure that acquisition is not running

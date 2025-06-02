@@ -24,7 +24,11 @@ int main(int argc, char **argv) {
 #endif
 
     // Add probelibs as a library path
-    QCoreApplication::addLibraryPath(QCoreApplication::applicationDirPath() + "/probelibs");
+    // TODO: Make every probelib reside in its own directory, this eases installation. And also make probelib loading
+    // has its own mechanism
+    auto probelibPath = QCoreApplication::applicationDirPath() + "/probelibs";
+    QCoreApplication::addLibraryPath(probelibPath);
+    AddDllDirectory(probelibPath.toStdWString().c_str());
 
     // Prepare for QSettings
     app.setOrganizationName("RigoLigoRLC");
