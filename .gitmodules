@@ -13,3 +13,6 @@
 [submodule "lib/singleapplication"]
 	path = lib/singleapplication
 	url = https://github.com/itay-grudev/SingleApplication.git
+[submodule "cmake/corrosion"]
+	path = cmake/corrosion
+	url = https://github.com/corrosion-rs/corrosion.git
