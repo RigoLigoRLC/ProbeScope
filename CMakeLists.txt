@@ -1,6 +1,14 @@
 
 cmake_minimum_required(VERSION 3.19)
 
+################################################################################
+#           Configure Options
+################################################################################
+option(BUILD_TESTS "Build tests" OFF)
+if(BUILD_TESTS)
+    list(APPEND VCPKG_MANIFEST_FEATURES "tests")
+endif()
+
 project(probescope)
 
 # Add AddressSanitizer on MSVC Debug
@@ -126,3 +134,9 @@ qm_add_translation(probescope_translate
     QM_DIR ${CMAKE_CURRENT_LIST_DIR}/lang/publish
     QM_DEPENDS probescope
 )
+
+# Unit tests
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

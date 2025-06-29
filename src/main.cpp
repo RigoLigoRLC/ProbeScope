@@ -28,7 +28,9 @@ int main(int argc, char **argv) {
     // has its own mechanism
     auto probelibPath = QCoreApplication::applicationDirPath() + "/probelibs";
     QCoreApplication::addLibraryPath(probelibPath);
+#ifdef Q_OS_WIN
     AddDllDirectory(probelibPath.toStdWString().c_str());
+#endif
 
     // Prepare for QSettings
     app.setOrganizationName("RigoLigoRLC");

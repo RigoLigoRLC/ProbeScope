@@ -33,7 +33,7 @@ struct Bytecode {
     QString disassemble(bool integerInHex = true);
     ExecutionResult execute(ExecutionState &state,
                             std::function<ExecutionResult(ExecutionState &, Opcode, ImmType)> runner);
-    static bool genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm);
+    static ExecutionResult genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm);
 
 private:
     static bool checkIfRequiredImmediateValid(Opcode opcode, const std::optional<QVariant> &immediate);

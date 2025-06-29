@@ -91,7 +91,7 @@ void AcquisitionHub::acquisitionThread(AcquisitionHub *self) {
                 auto execResult = it->bytecode.execute(
                     it->es, [&](ExecutionState &es, Opcode op, Bytecode::ImmType imm) -> Bytecode::ExecutionResult {
                         // Try generic executor
-                        if (Bytecode::genericComputationExecutor(es, op, imm)) {
+                        if (Bytecode::genericComputationExecutor(es, op, imm) == Bytecode::Continue) {
                             return Bytecode::Continue;
                         }
 

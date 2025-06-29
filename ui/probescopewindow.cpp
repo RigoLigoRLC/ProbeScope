@@ -339,7 +339,7 @@ void ProbeScopeWindow::sltCreatePlotArea(size_t id) {
     auto dock = new ads::CDockWidget(tr("Plot area %1").arg(id), this);
     dock->setWidget(area, ads::CDockWidget::ForceNoScrollArea);
     dock->setProperty(DockWidgetTypeProperty, DWT_PlotArea);
-    dock->setProperty(DockWidgetPlotAreaIdProperty, id);
+    dock->setProperty(DockWidgetPlotAreaIdProperty, QVariant::fromValue(id));
 
     addDockWidgetTab(ads::CenterDockWidgetArea, dock);
     m_dockPlotAreas[id] = dock;

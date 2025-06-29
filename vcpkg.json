@@ -3,5 +3,13 @@
         "libdwarf",
         "tree-sitter",
         "atomic-queue"
-    ]
+    ],
+    "features": {
+        "tests": {
+            "description": "Build tests",
+            "dependencies": [
+                "gtest"
+            ]
+        }
+    }
 }

@@ -1,5 +1,6 @@
 
 #include "expressionevaluator/optimizer.h"
+#include "symbolbackend.h"
 
 namespace ExpressionEvaluator {
 
@@ -157,7 +158,7 @@ Result<Bytecode, QString> StaticOptimize(Bytecode &bytecode, SymbolBackend *symb
                 auto baseType = modifiedType->getOperated(IType::Operation::Deref).unwrap();
 
                 // Multiply with the value already on the top of stack
-                ret.pushInstruction(MetaMulInt, {baseType->getSizeof()});
+                ret.pushInstruction(MetaMulInt, {QVariant::fromValue(baseType->getSizeof())});
 
                 // Do the offset, let the constant folding part clean it up
                 ret.pushInstruction(Add, {});

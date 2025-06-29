@@ -181,7 +181,7 @@ void PlotAreaColumnDelegate::setEditorData(QWidget *editor, const QModelIndex &i
         auto checkState = idSet.contains(k) ? Qt::Checked : Qt::Unchecked;
         item->setData(checkState, Qt::CheckStateRole);
         qDebug() << "Checkstate: Area=" << k << ",State=" << checkState;
-        item->setData(k, PlotAreaSelectorModel::PlotAreaIdRole);
+        item->setData(QVariant::fromValue(k), PlotAreaSelectorModel::PlotAreaIdRole);
         m_checkBoxModel->appendRow(item);
     };
 }

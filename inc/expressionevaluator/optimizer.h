@@ -4,7 +4,8 @@
 #include "expressionevaluator/bytecode.h"
 #include "expressionevaluator/executionstate.h"
 #include "result.h"
-#include "symbolbackend.h"
+
+class SymbolBackend;
 
 namespace ExpressionEvaluator {
 

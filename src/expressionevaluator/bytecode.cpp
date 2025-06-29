@@ -233,7 +233,7 @@ Bytecode::ExecutionResult
         switch (ret = runner(state, Opcode(insn), imm)) {
             case Completed: break;
             case Continue: continue;
-            case MemAccess: ++PC; break;
+            case MemAccess: break;
             case BeginErrors:
             case ErrorBreak: break;
             case InvalidPC: return InvalidPC;
@@ -250,40 +250,42 @@ Bytecode::ExecutionResult
     return ret;
 }
 
-bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm) {
+Bytecode::ExecutionResult Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType imm) {
     union {
         uint64_t u;
         int64_t i;
     } tmp1, tmp2;
     switch (op) {
-        case Nop: return true;
+        case Nop: return ExecutionResult::Continue;
         case LoadI16:
         case LoadU16:
         case LoadI32:
         case LoadU32:
         case LoadI64:
-        case LoadU64: es.stack.push_back(std::get<uint64_t>(imm)); return true;
+        case LoadU64: es.stack.push_back(std::get<uint64_t>(imm)); return ExecutionResult::Continue;
         case AddI16:
         case AddI32:
-        case AddI64: es.stack.back() += std::get<uint64_t>(imm); return true;
+        case AddI64: es.stack.back() += std::get<uint64_t>(imm); return ExecutionResult::Continue;
         case MulI16:
         case MulI32:
         case MulI64: {
             tmp1.u = es.stack.back();
             tmp2.u = std::get<uint64_t>(imm);
             es.stack.back() = tmp1.i * tmp2.i;
-            return true;
+            return ExecutionResult::Continue;
         }
-        case LogicalShiftRight: es.stack.back() >>= std::get<uint64_t>(imm); return true;
-        case MaskBitsZeroExtend: es.stack.back() &= ((~0ull) >> (64 - std::get<uint64_t>(imm))); return true;
+        case LogicalShiftRight: es.stack.back() >>= std::get<uint64_t>(imm); return ExecutionResult::Continue;
+        case MaskBitsZeroExtend: es.stack.back() &= ((~0ull) >> (64 - std::get<uint64_t>(imm))); return ExecutionResult::Continue;
         case MaskBitsSignExtend: {
             auto bits = std::get<uint64_t>(imm);
             es.stack.back() &= ((~0ull) >> (64 - bits));
             if (es.stack.back() & (1ull << (bits - 1))) {
                 es.stack.back() |= ((~0ull) << bits);
             }
-            return true;
+            return ExecutionResult::Continue;
         }
+        case Add: // TODO: IMPLEMENT
+        case Mul: // TODO: IMPLEMENT
         case MaxOpcodes:
         case LoadBase:
         case BaseResetScope:
@@ -297,6 +299,7 @@ bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType
         case TypeLoadType:
         case TypeModifyPtr:
         case TypeModifyArr:
+        case TypePushSizeof:
         case OffsetI16:
         case OffsetI32:
         case OffsetI64:
@@ -310,6 +313,7 @@ bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType
         case TypeLoadI64:
         case TypeLoadF32:
         case TypeLoadF64:
+        case Offset:
         case ReturnAsBase:
         case SingleEvalBegin:
         case SingleEvalEnd:
@@ -330,9 +334,9 @@ bool Bytecode::genericComputationExecutor(ExecutionState &es, Opcode op, ImmType
         case ReturnI32:
         case ReturnI64:
         case ReturnF32:
-        case ReturnF64: return false;
-    }
-    return false;
+        case ReturnF64: return ExecutionResult::MemAccess;
+}
+    return ExecutionResult::ErrorBreak;
 }
 
 /***************************************** INTERNAL UTILS *****************************************/
