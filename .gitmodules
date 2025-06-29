@@ -10,9 +10,6 @@
 [submodule "lib/Qt-Advanced-Docking-System"]
 	path = lib/Qt-Advanced-Docking-System
 	url = https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System.git
-[submodule "lib/singleapplication"]
-	path = lib/singleapplication
-	url = https://github.com/itay-grudev/SingleApplication.git
 [submodule "cmake/corrosion"]
 	path = cmake/corrosion
 	url = https://github.com/corrosion-rs/corrosion.git

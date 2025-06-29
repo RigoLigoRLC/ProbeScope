@@ -17,7 +17,7 @@ LONG WINAPI CustomUnhandledExceptionFilter(EXCEPTION_POINTERS *exceptionInfo);
 #endif
 
 int main(int argc, char **argv) {
-    SingleApplication app(argc, argv);
+    QApplication app(argc, argv);
 
 #ifdef Q_OS_WIN
     // SetUnhandledExceptionFilter(CustomUnhandledExceptionFilter);
