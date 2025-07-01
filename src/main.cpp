@@ -3,7 +3,6 @@
 #include <QTranslator>
 #include <qobject.h>
 // #include <qtermwidget.h>
-#include <singleapplication.h>
 
 #ifdef Q_OS_WIN
 // clang-format off
@@ -19,6 +18,28 @@ LONG WINAPI CustomUnhandledExceptionFilter(EXCEPTION_POINTERS *exceptionInfo);
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
+    // Prepare for QSettings
+    app.setOrganizationName("RigoLigoRLC");
+    app.setOrganizationDomain("rigoligo.cc");
+    app.setApplicationName("ProbeScope");
+    QSettings settings;
+
+    if (app.platformName() == u"wayland"_s && settings.value("Caveats/PopWaylandWarning", true).toBool()) {
+        if (auto choice = QMessageBox::warning(
+                nullptr, QObject::tr("Unsupported Platform"),
+                QObject::tr("ProbeScope relies on features unavailable under Wayland. If you proceed "
+                            "to continue, your experience will degrade. Some pop-ups will not show "
+                            "up correctly where they are.\n\n"
+                            "Do you want to ignore the above warnings and continue?\n"
+                            "(to suppress the warning for all times afterwards, click \"Yes to all\".)"),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll);
+            choice == QMessageBox::No) {
+            return 0;
+        } else if (choice == QMessageBox::YesToAll) {
+            settings.setValue("Caveats/PopWaylandWarning", false);
+        }
+    }
+
 #ifdef Q_OS_WIN
     // SetUnhandledExceptionFilter(CustomUnhandledExceptionFilter);
 #endif
@@ -31,11 +52,6 @@ int main(int argc, char **argv) {
 #ifdef Q_OS_WIN
     AddDllDirectory(probelibPath.toStdWString().c_str());
 #endif
-
-    // Prepare for QSettings
-    app.setOrganizationName("RigoLigoRLC");
-    app.setOrganizationDomain("rigoligo.cc");
-    app.setApplicationName("ProbeScope");
 
     QIcon::setThemeName("light"); // TODO: Make this configurable
 
