@@ -381,7 +381,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
                     } else if (Dwarf_Half addrAttrForm; dwarf_whatform(addrAttr, &addrAttrForm, &m_err) != DW_DLV_OK) {
                         qCritical() << "Failed to get form of location attribute for variable" << variableDieRef;
                         return;
-                    } else if (auto addrAttrResult = DwarfFormConstant(addrAttr); addrAttrResult.isErr()) {
+                    } else if (auto addrAttrResult = DwarfFormConstant(addrAttr, variableDie); addrAttrResult.isErr()) {
                         qCritical() << "Cannot form location constant for variable" << variableDieRef;
                         return;
                     } else {
@@ -422,7 +422,7 @@ Result<void, SymbolBackend::Error> SymbolBackend::switchSymbolFile(QString symbo
         } else if (Dwarf_Half addrAttrForm; dwarf_whatform(addrAttr, &addrAttrForm, &m_err) != DW_DLV_OK) {
             qCritical() << "Failed to get form of location attribute for variable" << variableDieRef;
             return;
-        } else if (auto addrAttrResult = DwarfFormConstant(addrAttr); addrAttrResult.isErr()) {
+        } else if (auto addrAttrResult = DwarfFormConstant(addrAttr, variableDie); addrAttrResult.isErr()) {
             qCritical() << "Cannot form location constant for variable" << variableDieRef;
             return;
         } else {
@@ -2232,7 +2232,8 @@ Result<SymbolBackend::DwarfFormedInt, int> SymbolBackend::DwarfFormInt(Dwarf_Att
     return Ok(formedInt);
 }
 
-Result<SymbolBackend::DwarfFormedInt, SymbolBackend::Error> SymbolBackend::DwarfFormConstant(Dwarf_Attribute attr) {
+Result<SymbolBackend::DwarfFormedInt, SymbolBackend::Error> SymbolBackend::DwarfFormConstant(Dwarf_Attribute attr,
+                                                                                             Dwarf_Die die) {
     Dwarf_Half form = 0;
     DwarfFormedInt formedInt;
     int dwRet;
@@ -2283,6 +2284,7 @@ Result<SymbolBackend::DwarfFormedInt, SymbolBackend::Error> SymbolBackend::Dwarf
                         switch (op) {
                             case DW_OP_plus_uconst: formedInt.u += opd1; break;
                             case DW_OP_addr: formedInt.u = opd1; break;
+                            case DW_OP_addrx: dwarf_debug_addr_index_to_addr(die, opd1, &formedInt.u, &m_err); break;
                             default: return Err(Error::DwarfAttrNotConstant);
                         }
                     } else {

@@ -364,7 +364,8 @@ private:
     Result<Dwarf_Off, int> DwarfCuDataOffsetFromDie(Dwarf_Die die,
                                                     Dwarf_Error *); ///< Get CU data offset for the owner CU of this DIE
     Result<DwarfFormedInt, int> DwarfFormInt(Dwarf_Attribute attr);
-    Result<DwarfFormedInt, Error> DwarfFormConstant(Dwarf_Attribute attr); ///< Added for Keil member location
+    Result<DwarfFormedInt, Error> DwarfFormConstant(Dwarf_Attribute attr,
+                                                    Dwarf_Die die = nullptr); ///< Added for Keil member location
 
 private:
     QProgressDialog m_progressDialog;
@@ -379,6 +380,7 @@ private:
     QMap<DieRef, IScope::p> m_scopeMap;      ///< (CuOffset -> IScope) mapping, for entire file
     QMultiHash<QString, int> m_qualifiedCus; ///< (Source Files -> CUs that contain global variables) mapping
     QStringList m_qualifiedSourceFiles;      ///< Source files that contain global variables
+
 
     TypeScopeNamespace::p m_rootNamespace;
     Dwarf_Error m_err;
