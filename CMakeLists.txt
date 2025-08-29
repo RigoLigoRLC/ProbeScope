@@ -46,10 +46,6 @@ set_target_properties(qtadvanceddocking-qt6 PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
 )
 
-# Import Qt Single Application library
-set(QAPPLICATION_CLASS QApplication CACHE STRING "Inheritance class for SingleApplication")
-add_subdirectory(lib/singleapplication)
-
 # Import libdwarf
 include(cmake/ImportLibdwarf.cmake)
 
@@ -100,7 +96,6 @@ qm_configure_target(probescope
     LINKS_PRIVATE
         # qtermwidget
         ads::qtadvanceddocking-qt6
-        SingleApplication::SingleApplication
         ${libdwarf_LINK_LIBRARIES}
         ${QCUSTOMPLOT_LINK_LIBRARIES}
         unofficial::tree-sitter::tree-sitter
