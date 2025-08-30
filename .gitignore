@@ -65,3 +65,4 @@ out/
 
 # Author's local deployment directory
 _DEPLOY/
+_INSTALL/

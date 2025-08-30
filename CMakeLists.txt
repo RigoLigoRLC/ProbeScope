@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.21)
 
 ################################################################################
 #           Configure Options
@@ -15,6 +15,12 @@ project(probescope)
 if (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     message("MSVC AddressSanitizer enabled")
     add_compile_options(/fsanitize=address)
+endif()
+
+# As per https://doc.qt.io/qt-6/cmake-variable-qt-deploy-bin-dir.html,
+# CMAKE_INSTALL_BINDIR must be set before finding Qt Core
+if (WIN32)
+    set(CMAKE_INSTALL_BINDIR .)
 endif()
 
 # Setup host tools
@@ -58,6 +64,9 @@ add_subdirectory(lib/QCustomPlot)
 
 # Import atomic_queue
 find_path(ATOMIC_QUEUE_INCLUDE_DIRS "atomic_queue/atomic_queue.h")
+
+# Include build info generation
+include(cmake/GenerateBuildInfo.cmake)
 
 # Build the internal probelibs
 add_subdirectory(plugins)
@@ -115,7 +124,14 @@ if (WIN32)
     target_link_libraries(probescope PRIVATE dbghelp.lib)
 endif ()
 
-install(TARGETS probescope)
+if (PROBESCOPE_INCLUDE_BUILD_INFO)
+    # Generate build information
+    generate_build_info(probescope ${CMAKE_BINARY_DIR}/generated)
+endif()
+
+# Install main executable to root directory of install prefix
+# FIXME: This might need a fix for Unices
+install(TARGETS probescope DESTINATION .)
 
 # Deal with translations
 qm_import(Translate)
@@ -129,6 +145,9 @@ qm_add_translation(probescope_translate
     QM_DIR ${CMAKE_CURRENT_LIST_DIR}/lang/publish
     QM_DEPENDS probescope
 )
+
+# Additional cleanup for CMake installing
+include(cmake/Installation.cmake)
 
 # Unit tests
 if(BUILD_TESTS)
