@@ -45,6 +45,7 @@ set(BUILD_EXAMPLES OFF)
 # add_subdirectory(lib/libqtermwidget)
 
 # Import Qt ADS
+set(BUILD_EXAMPLES OFF CACHE BOOL "Build examples" FORCE)
 add_subdirectory(lib/Qt-Advanced-Docking-System)
 set_target_properties(qtadvanceddocking-qt6 PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
