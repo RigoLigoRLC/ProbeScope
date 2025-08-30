@@ -11,12 +11,24 @@
 #include <QMessageBox>
 #include <QSettings>
 
+#ifdef PROBESCOPE_INCLUDE_BUILD_INFO
+#include "buildinfo.h"
+#endif
+
 static constexpr auto DockWidgetTypeProperty = "DockWidgetType";
 static constexpr auto DockWidgetPlotAreaIdProperty = "DockWidgetPlotAreaId";
 
 ProbeScopeWindow::ProbeScopeWindow(QWidget *parent) : QMainWindow(parent), m_refreshTimerShouldStop(false) {
     ui = new Ui::ProbeScopeWindow;
     ui->setupUi(this);
+
+    // Set window title with build information when commanded
+#ifdef PROBESCOPE_INCLUDE_BUILD_INFO
+    QString title = QString("ProbeScope - %1").arg(BuildInfo::getVersionString());
+#else
+    QString title = QString("ProbeScope");
+#endif
+    setWindowTitle(title);
 
     // Initialize dock manager
     ads::CDockManager::setConfigFlag(ads::CDockManager::DefaultOpaqueConfig, true);
